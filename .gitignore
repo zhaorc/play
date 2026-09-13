@@ -1,0 +1,13 @@
+# IDE / 工具目录
+.trae/
+
+# 独立 git 仓库（有自己的历史，单独管理）
+music-box/
+
+# 密钥与敏感信息
+deepseek.txt
+
+# 本地服务与临时文件
+*.log
+Thumbs.db
+Desktop.ini
