@@ -292,7 +292,9 @@
       var h = state.holes[i];
       var hy = gh + PP.holeYMM(h.col, h.row, state.mmPerBeat) * ppm;
       if (hy < sy - px * 2) continue;
-      if (hy > sy + vh + px * 2 && h.row === 0) break;
+      // break 必须让出 105mm 站间距：同 col 及之后 row1（和弦）孔 y 比 row0 小 105mm，
+      // 仍可能在视口内；否则这些孔会被漏画、随 break 点推进而在视口中上部"突然出现"（幽灵孔）
+      if (hy > sy + vh + px * 2 + stp && h.row === 0) break;
       var hx = left + PP.laneXMM(h.row, h.lane) * ppm;
       var lit = state.highlights.get(holeKey(h));
       var glow = lit != null && now >= lit && now < lit + 0.9 ? 1 - (now - lit) / 0.9 : 0;
@@ -310,14 +312,11 @@
         ctx2d.strokeStyle = h.lane === 0 ? '#c9563a' : '#4d9a6c';
         ctx2d.lineWidth = 1.4; ctx2d.stroke();
       } else {
+        // 音符孔按排分色：主旋律（row0）红橙、和弦（row1）绿——与两排扫描线同色系
         ctx2d.beginPath(); ctx2d.arc(hx, hy, rHole, 0, 6.2832);
-        ctx2d.fillStyle = '#2b2620'; ctx2d.fill();
+        ctx2d.fillStyle = h.row === 0 ? '#a8431f' : '#1e7a4f'; ctx2d.fill();
         ctx2d.beginPath(); ctx2d.arc(hx, hy, rHole - 1, 0, 6.2832);
-        ctx2d.fillStyle = '#12100c'; ctx2d.fill();
-        if (h.row === 1) { // 和弦孔描蓝环便于区分
-          ctx2d.beginPath(); ctx2d.arc(hx, hy, rHole + 0.8, 0, 6.2832);
-          ctx2d.strokeStyle = 'rgba(80,130,210,0.7)'; ctx2d.lineWidth = 1; ctx2d.stroke();
-        }
+        ctx2d.fillStyle = h.row === 0 ? '#7c2f13' : '#125436'; ctx2d.fill();
       }
     }
 
@@ -609,12 +608,18 @@
   function openImportDialog() {
     var list = $('trackList');
     list.innerHTML = '';
-    var any = false, melGiven = false;
+    var any = false;
+    // 默认分配：音域均值最高的轨 → 主旋律（下排），其余有音符的轨 → 和弦（上排）；单轨曲配合"按音高拆分"自动分出左手
+    var melIdx = -1, best = -1;
+    state.midi.tracks.forEach(function (tr, idx) {
+      if (!tr.notes.length) return;
+      var avg = trackAvgPitch(tr);
+      if (avg > best) { best = avg; melIdx = idx; }
+    });
     state.midi.tracks.forEach(function (tr, idx) {
       if (!tr.notes.length) return;
       any = true;
-      var role = 'none';
-      if (!melGiven) { role = 'mel'; melGiven = true; }
+      var role = idx === melIdx ? 'mel' : 'cho';
       var avg = trackAvgPitch(tr);
       var min = tr.notes[0].note, max = tr.notes[0].note;
       tr.notes.forEach(function (n) { if (n.note < min) min = n.note; if (n.note > max) max = n.note; });
@@ -623,7 +628,7 @@
       div.innerHTML = '<select data-t="' + idx + '">' +
         '<option value="none">不导入</option>' +
         '<option value="mel"' + (role === 'mel' ? ' selected' : '') + '>主旋律(下排)</option>' +
-        '<option value="cho">和弦(上排)</option>' +
+        '<option value="cho"' + (role === 'cho' ? ' selected' : '') + '>和弦(上排)</option>' +
         '</select> 轨道 ' + (idx + 1) + '：' + escapeHtml(tr.name || '(未命名)') +
         ' <span class="meta">— ' + tr.notes.length + ' 音 · 音域 ' + midiName(min) + '~' + midiName(max) +
         ' · 均值 ' + midiName(Math.round(avg)) + '</span>';
@@ -914,9 +919,14 @@
     s.push('<line x1="0" y1="' + PHYS.leadInMM + '" x2="' + geo.wMM + '" y2="' + PHYS.leadInMM + '" stroke="#66c" stroke-width="0.25" stroke-dasharray="1,1"/>');
     var melStart = PHYS.leadInMM + PHYS.stationGapMM;
     s.push('<line x1="0" y1="' + melStart + '" x2="' + geo.wMM + '" y2="' + melStart + '" stroke="#c66" stroke-width="0.25" stroke-dasharray="1,1"/>');
-    // 孔
+    // 孔（按排分色：主旋律红橙 / 和弦绿；换挡键孔灰描边）
     for (var j = 0; j < geo.holes.length; j++) {
-      s.push('<circle cx="' + geo.holes[j].x.toFixed(2) + '" cy="' + geo.holes[j].y.toFixed(2) + '" r="' + PHYS.holeRadiusMM + '" fill="black"/>');
+      var hh = geo.holes[j];
+      if (PP.isShiftLane(hh.lane)) {
+        s.push('<circle cx="' + hh.x.toFixed(2) + '" cy="' + hh.y.toFixed(2) + '" r="' + PHYS.holeRadiusMM + '" fill="none" stroke="#888" stroke-width="0.2"/>');
+      } else {
+        s.push('<circle cx="' + hh.x.toFixed(2) + '" cy="' + hh.y.toFixed(2) + '" r="' + PHYS.holeRadiusMM + '" fill="' + (hh.row === 0 ? '#a8431f' : '#1e7a4f') + '"/>');
+      }
     }
     s.push('</svg>');
     download('完美钢琴纸带打孔图.svg', new Blob([s.join('\n')], { type: 'image/svg+xml' }));
@@ -945,11 +955,12 @@
       if (y2 < geo.hMM) { c.beginPath(); c.moveTo(0, y2 * scale); c.lineTo(cv.width, y2 * scale); c.stroke(); }
       c.save(); c.setLineDash([scale * 1.5, scale * 1.5]); c.beginPath(); c.moveTo(0, geo.beatYs[i] * scale); c.lineTo(cv.width, geo.beatYs[i] * scale); c.stroke(); c.restore();
     }
-    c.fillStyle = '#000';
     for (var j = 0; j < geo.holes.length; j++) {
+      var hh = geo.holes[j];
       c.beginPath();
-      c.arc(geo.holes[j].x * scale, geo.holes[j].y * scale, PHYS.holeRadiusMM * scale, 0, 6.2832);
-      c.fill();
+      c.arc(hh.x * scale, hh.y * scale, PHYS.holeRadiusMM * scale, 0, 6.2832);
+      if (PP.isShiftLane(hh.lane)) { c.strokeStyle = '#888'; c.lineWidth = Math.max(1, scale * 0.2); c.stroke(); }
+      else { c.fillStyle = hh.row === 0 ? '#a8431f' : '#1e7a4f'; c.fill(); }
     }
     cv.toBlob(function (blob) {
       if (blob) { download('完美钢琴纸带打孔图.png', blob); setMsg('PNG 已导出（' + scale + ' px/mm）'); }
