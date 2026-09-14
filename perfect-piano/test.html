@@ -157,6 +157,26 @@
   var r6 = K.scheduleRow([{ col: 0, wi: 0 }, { col: 32, wi: 14 }], 0, { bpm: 60 });
   eq('提前量随速度：60BPM 时 0.6s 折 3 列', r6.shifts[0].col, 29);
   eq('120BPM 时 0.6s 折 5 列', r2.shifts[0].col, 27);
+
+  // ---- 7d. 首音超窗：第一个音不在 C4~B5 时须在纸带头部留白内先打换挡孔 ----
+  // 土耳其进行曲伴奏轨首音 A3（低于 C4）：113BPM、1.07s ≈ col 8，降挡孔应排在其前
+  var r7 = K.scheduleRow([{ col: 8, wi: -2 }], 0, { bpm: 113 });
+  eq('首音 A3 低于 C4：触发一次降挡', r7.shifts.length, 1);
+  eq('首音 A3 降挡方向 -1', r7.shifts[0].dir, -1);
+  ok('降挡孔在首音之前（' + r7.shifts[0].col + ' < 8）', r7.shifts[0].col >= 0 && r7.shifts[0].col < 8);
+  eq('首音 A3 换挡后落在轨13', r7.holes[1].lane, 13);
+  eq('首音 A3 实际音高 57', r7.holes[1].midi, 57);
+  // 极限场景：guitar 版首音 B3@0s（136BPM）——600ms 余量放不下，退到纸带头边界仍须保证 400ms 到位
+  var r8 = K.scheduleRow([{ col: 0, wi: -1 }], 0, { bpm: 136 });
+  eq('首音 B3@0s：仍能降挡（用纸带头边界）', r8.shifts.length, 1);
+  eq('降挡孔打到最早允许列 -5（y=3.75mm，孔缘距带头 2.55mm）', r8.shifts[0].col, -5);
+  eq('极限场景不钳制', r8.clamped, 0);
+  var tl8 = K.buildShiftTimeline(r8.holes, 136);
+  ok('键盘在首音触发（0.125 拍）前到位（' + tl8[0][0].arrive.toFixed(3) + ' 拍）', tl8[0][0].arrive < 0.125);
+  // 无解场景：240BPM 首音@0s 低于 C4——连 400ms 硬边界都放不下，只能钳制
+  var r9 = K.scheduleRow([{ col: 0, wi: -1 }], 0, { bpm: 240 });
+  eq('240BPM 首音超窗无解：钳制处理', r9.clamped, 1);
+  eq('无解时不产生换挡孔', r9.shifts.length, 0);
   var tmv = K.makeTempoMap([{ tick: 0, usPerQuarter: 500000 }, { tick: 480, usPerQuarter: 1500000 }], 480);
   var tl4 = K.buildShiftTimeline([{ col: 0, row: 0, lane: 15, midi: null }], tmv);
   near('变速曲到位拍：触发 0.125 拍 + 400ms → 0.925 拍', tl4[0][0].arrive, 0.925);

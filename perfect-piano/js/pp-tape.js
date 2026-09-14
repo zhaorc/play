@@ -165,13 +165,21 @@
     var bpm0 = opts.bpm || 120;
     var mmb = opts.mmPerBeat || PHYS.mmPerBeat;
     // 换挡键孔允许的最早列（可落在头部留白内，但不越过纸带头 2mm）——按本曲 mmPerBeat 折算
-    var minShiftCol = Math.floor((2 - PHYS.leadInMM) / mmb * PPB);
+    // （ceil：col 为 -5.78 这类小数时须向上取整到 -5，floor 取 -6 会打到带头 1.5mm 处、孔缘距边仅 0.3mm）
+    var minShiftCol = Math.ceil((2 - PHYS.leadInMM) / mmb * PPB);
     function tTime(b) { return tm ? tm.beatToTime(b) : b * 60 / bpm0; }
     // 目标音前最晚可打换挡键的列：触发 + shiftLeadMs ≤ 目标音符触发
+    // 触到纸带头边界（minShiftCol）仍不满足时，降级要求至少满足换挡硬耗时（400ms 键盘到位）；
+    // 连硬边界都不满足则返回 null（无解 → 调用处钳制）。余量不足但能到位的极端快曲仍可换挡。
     function pressColFor(noteCol) {
-      var limit = tTime((noteCol + 0.5) / PPB) - PHYS.shiftLeadMs / 1000;
+      var tNote = tTime((noteCol + 0.5) / PPB);
+      var limit = tNote - PHYS.shiftLeadMs / 1000;
+      var hard = tNote - PHYS.shiftMs / 1000;
       var c = noteCol - 1;
       while (c >= minShiftCol && tTime((c + 0.5) / PPB) > limit + 1e-9) c--;
+      if (c < minShiftCol) {
+        return tTime((minShiftCol + 0.5) / PPB) <= hard + 1e-9 ? minShiftCol : null;
+      }
       return c;
     }
     // 在 refCol 之前、与 refCol 触发间隔 ≥ shiftMs 的最晚列（多次连续按动用）
@@ -179,7 +187,7 @@
       var limit = tTime((refCol + 0.5) / PPB) - PHYS.shiftMs / 1000;
       var c = refCol - 1;
       while (c >= minShiftCol && tTime((c + 0.5) / PPB) > limit + 1e-9) c--;
-      return c;
+      return c < minShiftCol ? null : c;
     }
     var holes = [], shifts = [], clamped = 0;
     var w = 0, prevCol = null;
@@ -214,7 +222,7 @@
         var presses = [pressColFor(col)];
         for (var p = 1; p < nPress; p++) presses.unshift(prevPressCol(presses[0]));
         var t0 = presses[0], tLast = presses[nPress - 1];
-        var noRoom = (tLast < minShiftCol) ||
+        var noRoom = (t0 === null || tLast === null) ||
           (prevCol !== null && (t0 < prevCol || tLast < prevCol));
         if (noRoom) { // 与上一音间隔不足，放弃换挡改钳制
           clamped++;
