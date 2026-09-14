@@ -1,5 +1,5 @@
 /* ============================================================
- * 完美钢琴纸带打孔工作室 - 主程序
+ * 纸带钢琴工坊 - 主程序
  * 物理纸带渲染（Canvas 虚拟滚动，与 1:1 导出同几何）
  * 手动打孔编辑 / MIDI 导入（双排轨道分配 + 音高拆分）
  * 换挡键调度展示 / Web Audio 演奏模拟 / 工程 JSON / SVG、PNG 导出
@@ -863,7 +863,7 @@
   function saveProject() {
     if (!state.holes.length) { setMsg('纸带为空'); return; }
     var data = { v: 1, app: 'perfect-piano', bpm: state.bpm, transpose: state.transpose, mmPerBeat: state.mmPerBeat, holes: state.holes, endCol: state.endCol };
-    download('完美钢琴纸带工程.json', new Blob([JSON.stringify(data)], { type: 'application/json' }));
+    download('纸带钢琴工程.json', new Blob([JSON.stringify(data)], { type: 'application/json' }));
   }
   function openProjectFile(file) {
     var reader = new FileReader();
@@ -929,7 +929,7 @@
       }
     }
     s.push('</svg>');
-    download('完美钢琴纸带打孔图.svg', new Blob([s.join('\n')], { type: 'image/svg+xml' }));
+    download('纸带打孔图.svg', new Blob([s.join('\n')], { type: 'image/svg+xml' }));
     setMsg('SVG 已导出（1:1 毫米单位，主旋律孔比和弦孔靠带尾 105mm；打印请关闭缩放）');
   }
 
@@ -963,7 +963,7 @@
       else { c.fillStyle = hh.row === 0 ? '#a8431f' : '#1e7a4f'; c.fill(); }
     }
     cv.toBlob(function (blob) {
-      if (blob) { download('完美钢琴纸带打孔图.png', blob); setMsg('PNG 已导出（' + scale + ' px/mm）'); }
+      if (blob) { download('纸带打孔图.png', blob); setMsg('PNG 已导出（' + scale + ' px/mm）'); }
     }, 'image/png');
   }
 

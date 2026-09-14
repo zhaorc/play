@@ -1,6 +1,6 @@
 /* ============================================================
  * 打孔机上位机模块 punch-sender.js
- * 完美钢琴纸带工作室 → Arduino Nano 打孔机（固件 puncher.ino）
+ * 纸带钢琴工坊 → Arduino Nano 打孔机（固件 puncher.ino）
  *
  * 纯函数（可在 test.html 断言）：
  *   Punch.buildTask(holes, mmb)   孔序列 → 打孔任务（机器坐标 mm，
