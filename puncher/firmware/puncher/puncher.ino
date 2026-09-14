@@ -6,7 +6,7 @@
  *   X 轴：NEMA 17HS2408 + THB6128（128 细分），直连 Φ24mm 滚轮摩擦走带
  *         25600 脉冲/圈 → π×24 = 75.40mm/圈 → 339.53 脉冲/mm
  *   Y 轴：同款电机驱动，1模21齿齿轮 + 齿条，节圆 Φ21mm
- *         25600 脉冲/圈 → π×21 = 65.97mm/圈 → 388.02 脉冲/mm
+ *         25600 脉冲/圈 → π×21 = 65.97mm/圈 → 388.03 脉冲/mm
  *   Z 轴：PWM 舵机（50Hz，独立 5V 供电），90° 抬起 / 45° 下压，钻孔 2s
  *   通信：USB 串口 115200，ASCII 行协议（\n 结尾）
  *
@@ -57,7 +57,7 @@
 #define PULSES_PER_REV  ((int32_t)STEPS_PER_REV * MICROSTEPS)   // 25600
 #define X_ROLLER_DIA_MM 24.0f     // X 滚轮直径
 #define Y_PITCH_DIA_MM  21.0f     // Y 齿轮节圆直径（1模×21齿）
-// 理论脉冲当量：X = 25600/(π×24) = 339.53 /mm；Y = 25600/(π×21) = 388.02 /mm
+// 理论脉冲当量：X = 25600/(π×24) = 339.53 /mm；Y = 25600/(π×21) = 388.03 /mm
 #define X_PMM_DEFAULT   (PULSES_PER_REV / (3.14159265f * X_ROLLER_DIA_MM))
 #define Y_PMM_DEFAULT   (PULSES_PER_REV / (3.14159265f * Y_PITCH_DIA_MM))
 

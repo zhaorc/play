@@ -71,6 +71,28 @@
   .dlg-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
   .dlg-actions .right { display: flex; gap: 8px; flex: none; }
   #dlg .hint { font-size: 12px; color: #a8b2bf; line-height: 1.5; }
+  /* 打孔机控制对话框 */
+  #dlgPunch {
+    position: fixed; inset: 0; background: rgba(0,0,0,.55);
+    display: none; align-items: center; justify-content: center; z-index: 50;
+  }
+  #dlgPunch.open { display: flex; }
+  #dlgPunch .panel {
+    background: #2a3038; border: 1px solid #4d5763; border-radius: 8px;
+    padding: 14px 16px; width: 640px; max-height: 88vh; overflow: auto;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  #dlgPunch h3 { margin: 0; font-size: 15px; color: #eef2f7; }
+  #dlgPunch .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  #dlgPunch hr { border: none; border-top: 1px solid #3d454f; width: 100%; margin: 2px 0; }
+  #dlgPunch .lbl { font-size: 12px; color: #a8b2bf; }
+  #dlgPunch input[type=number] { width: 72px; }
+  #punchLog {
+    height: 96px; overflow: auto; background: #1a1e24; border: 1px solid #3d454f;
+    border-radius: 4px; padding: 4px 6px; font: 11.5px Consolas, monospace;
+    color: #9fb0c4; white-space: pre; user-select: text;
+  }
+  #punchProg { font-size: 12.5px; color: #e8b661; }
   /* 从网址导入对话框 */
   #dlgUrl {
     position: fixed; inset: 0; background: rgba(0,0,0,.55);
@@ -126,6 +148,9 @@
     <button id="btnSVG">导出 SVG</button>
     <button id="btnPNG">导出 PNG</button>
   </div>
+  <div class="tb-group">
+    <button id="btnPunch" class="primary">打孔机</button>
+  </div>
 </div>
 
 <div id="wrap">
@@ -168,6 +193,55 @@
 <input type="file" id="fileMidi" accept=".mid,.midi" hidden>
 <input type="file" id="fileJson" accept=".json" hidden>
 
+<div id="dlgPunch">
+  <div class="panel">
+    <h3>打孔机控制</h3>
+    <div class="lbl" id="punchConnHint">连接 Arduino Nano 打孔机（115200）。建议流程：点动对刀 → 设为原点 → 生成任务 → 开始打孔。</div>
+    <div class="row">
+      <button id="btnPConnect" class="primary">连接</button>
+      <button id="btnPDisconnect" disabled>断开</button>
+      <span class="lbl" id="punchLinkState">未连接</span>
+    </div>
+    <hr>
+    <div class="row">
+      <span class="lbl">点动 X(mm)</span><input id="pjX" type="number" step="1" value="0">
+      <span class="lbl">Y(mm)</span><input id="pjY" type="number" step="1" value="0">
+      <button id="btnPJog" disabled>移动</button>
+      <button id="btnPOrigin" disabled>设为原点（对刀）</button>
+      <button id="btnPQuery" disabled>查询</button>
+      <span class="lbl" id="punchPos"></span>
+    </div>
+    <div class="row">
+      <span class="lbl">进给</span><input id="pFeed" type="number" min="1" max="50" step="0.5" value="10">
+      <span class="lbl">mm/s</span>
+      <button id="btnPFeed" disabled>设置</button>
+      <button id="btnPZ0" disabled title="调试：抬钻 90°">抬钻</button>
+      <button id="btnPZ1" disabled title="调试：压钻 45°">压钻</button>
+      <span class="lbl">校准 X 脉冲/mm</span><input id="pXpmm" type="number" step="0.01" value="339.53">
+      <span class="lbl">Y</span><input id="pYpmm" type="number" step="0.01" value="388.03">
+      <button id="btnPCal" disabled>校准下发</button>
+    </div>
+    <hr>
+    <div class="row">
+      <button id="btnPGen">从当前纸带生成任务</button>
+      <button id="btnPExport">导出 .punch</button>
+      <span class="lbl" id="punchTaskInfo">未生成（先点"从当前纸带生成任务"）</span>
+    </div>
+    <div class="row">
+      <button id="btnPFirst" class="primary" disabled>试打第 1 孔</button>
+      <button id="btnPStart" class="primary" disabled>开始打孔</button>
+      <button id="btnPPause" disabled>暂停</button>
+      <button id="btnPEstop" disabled style="background:#7c3626;border-color:#a34a35">急停</button>
+    </div>
+    <div id="punchProg">—</div>
+    <div id="punchLog"></div>
+    <div class="dlg-actions">
+      <span class="lbl">打孔过程中请勿关闭页面 / 拔出串口</span>
+      <span class="right"><button id="btnPClose">关闭</button></span>
+    </div>
+  </div>
+</div>
+
 <div id="dlgUrl">
   <div class="panel">
     <h3>从网址导入 MIDI</h3>
@@ -190,6 +264,7 @@
 <script src="js/midi-parser.js?v=2"></script>
 <script src="js/pp-tape.js?v=7"></script>
 <script src="js/synth.js"></script>
+<script src="js/punch-sender.js?v=2"></script>
 <script src="js/app.js?v=19"></script>
 </body>
 </html>

@@ -16,6 +16,7 @@
 <div id="out"></div>
 <div id="summary"></div>
 <script src="js/pp-tape.js?v=6"></script>
+<script src="js/punch-sender.js?v=2"></script>
 <script>
 (function () {
   'use strict';
@@ -318,6 +319,39 @@
   near('beat4 → 1.5s（240BPM 段）', tm.beatToTime(4), 1.5);
   near('timeToBeat 反演', tm.timeToBeat(1.25), 3);
   eq('无 tempo 事件 → null', K.makeTempoMap([], 480), null);
+
+  // ---- 14. 打孔机任务生成（上位机 ↔ 固件协议层）----
+  var PS = window.Punch;
+  eq('打孔：常量 X 当量 339.53', Math.round(PS.FW.X_PMM * 100) / 100, 339.53);
+  eq('打孔：常量 Y 当量 388.03', Math.round(PS.FW.Y_PMM * 100) / 100, 388.03);
+  eq('打孔：空孔序列 → 空任务', PS.buildTask([], 9).length, 0);
+  var pt = PS.buildTask([
+    { col: 0, row: 1, lane: 1 },
+    { col: 0, row: 0, lane: 1 },
+    { col: 4, row: 1, lane: 2 }
+  ], 9);
+  // 机器 x = holeYMM：row1 col0=15、row0 col0=120（+105 站间）、row1 col4=24
+  eq('打孔：x 主序（走带方向）排列', pt.map(function (t) { return t.x; }).join(','), '15,24,120');
+  // 机器 y = laneXMM：row1 lane1=25、row1 lane2=33、row0 lane1=21
+  eq('打孔：y 为带宽方向坐标', pt[0].y + ',' + pt[1].y + ',' + pt[2].y, '25,33,21');
+  var pt2 = PS.buildTask([
+    { col: 0, row: 1, lane: 3 },
+    { col: 0, row: 1, lane: 1 }
+  ], 9);
+  eq('打孔：同 x 按 y 升序（先低后高）', pt2.map(function (t) { return t.y; }).join(','), '25,41');
+  var pt3 = PS.buildTask([{ col: 4, row: 0, lane: 1 }], 18);
+  near('打孔：拉长曲按 18mm/拍换算 x', pt3[0].x, 15 + 18 + 105);
+  var pt4 = PS.buildTask([{ col: 0, row: 0, lane: 15 }, { col: 0, row: 0, lane: 0 }], 9);
+  eq('打孔：含换挡键孔 lane0/15', pt4.map(function (t) { return t.y; }).join(','), '13,133');
+  eq('打孔：P 命令行格式', PS.formatPunch({ x: 15, y: 25 }), 'P 15.00 25.00');
+  var est = PS.estimate([{ x: 15, y: 25 }, { x: 15, y: 45 }], 10);
+  // 移动 |15|+|25| + |0|+|20| = 60mm → 6s；2 孔 × (2s 钻 + 2×0.5s 舵机) = 6s
+  eq('打孔：估算移动量 60mm', est.travel, 60);
+  eq('打孔：估算总用时 12s', est.seconds, 12);
+  eq('打孔：估算空任务', PS.estimate([], 10).seconds, 0);
+  var ptxt = PS.exportTaskText([{ x: 15, y: 25 }, { x: 24, y: 33 }]);
+  eq('打孔：.punch 首行注释', ptxt.split('\n')[0], '# puncher task v1');
+  eq('打孔：.punch P 行数', (ptxt.match(/^P /gm) || []).length, 2);
 
   // ---- 汇总 ----
   document.getElementById('summary').innerHTML =
