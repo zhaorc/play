@@ -24,6 +24,7 @@
     bpm: 100,
     tempoMap: null,       // PP.makeTempoMap 结果；null = 按 state.bpm 恒定速度
     transpose: 0,
+    segTranspose: null,   // 按调号分段移调 [{tick0, sf, minor, s}]；null = 全曲统一移调
     mmPerBeat: PHYS.mmPerBeat, // 本曲每拍毫米数（最密间隔拉长后可能 > 标准值）
     report: null,         // 最近一次转换报告
     shiftTL: null,        // 每排换挡事件时间线（play 时构建），驱动键盘换位与音名栏
@@ -75,7 +76,7 @@
   }
   function insertHole(col, row, lane) {
     if (findHole(col, row, lane) >= 0) return;
-    var midi = (lane >= 1 && lane <= 14) ? PP.whiteToMidi(lane - 1) : null; // 烘焙值按基础窗口（挡位 0）；播放时实际音高随键盘挡位
+    var midi = (lane >= 1 && lane <= 14) ? PP.whiteToMidi(PP.GEAR_STARTS[0] + lane - 1) : null; // 烘焙值按初始档 A0 窗口；播放时实际音高随键盘档位
     state.holes.splice(lowerBound(col, row, lane), 0, { col: col, row: row, lane: lane, midi: midi });
     if (col + 1 > state.endCol) { state.endCol = col + 1; updateSpacer(); }
   }
@@ -287,7 +288,7 @@
     // 只能从"可见最低列"起步，且仅在主旋律孔(row0)越出视口底部时才能 break）
     var now = nowSec();
     var rHole = Math.min(px * 0.42, 2.4 * ppm);
-    var colMin = Math.max(0, Math.floor(((sy - gh) / ppm - PHYS.leadInMM - PHYS.stationGapMM) * PPB / state.mmPerBeat) - 2);
+    var colMin = Math.floor(((sy - gh) / ppm - PHYS.leadInMM - PHYS.stationGapMM) * PPB / state.mmPerBeat) - 2; // 可为负：归位孔在头部留白（col < 0）
     for (var i = lowerBound(colMin, 0, 0); i < state.holes.length; i++) {
       var h = state.holes[i];
       var hy = gh + PP.holeYMM(h.col, h.row, state.mmPerBeat) * ppm;
@@ -415,9 +416,9 @@
       for (var k2 = 0; k2 < LANES; k2++) {
         var cx = left + PP.laneXMM(r, k2) * ppm - sx;
         if (cx < -10 || cx > vw + 10) continue;
-        var txt = k2 === 0 ? '◀◀' : k2 === 15 ? '▶▶' : PP.whiteName(14 * sh + k2 - 1);
-        // 到界方向的换挡键当前不可再按 → 变暗；换挡滑动中白键名灰显；已换挡白键标签金色
-        var atBoundDown = k2 === 0 && sh <= -PHYS.maxShift, atBoundUp = k2 === 15 && sh >= PHYS.maxShift;
+        var txt = k2 === 0 ? '◀◀' : k2 === 15 ? '▶▶' : PP.whiteName(PP.GEAR_STARTS[sh] + k2 - 1);
+        // 到界方向的换挡键当前不可再按 → 变暗（底界 A0=0 档 / 顶界 D6=W_MAX 档）；换挡滑动中白键名灰显；已换挡白键标签金色
+        var atBoundDown = k2 === 0 && sh <= 0, atBoundUp = k2 === 15 && sh >= PP.W_MAX;
         if (atBoundDown || atBoundUp) ctx2d.fillStyle = '#555f6b';
         else if (PP.isShiftLane(k2)) ctx2d.fillStyle = r === 0 ? '#c98a5f' : '#7fa6d8';
         else if (info.moving) ctx2d.fillStyle = '#6b7684';
@@ -428,9 +429,9 @@
     ctx2d.fillStyle = '#77828f';
     ctx2d.font = '9px sans-serif';
     ctx2d.textAlign = 'left';
-    if (left - sx > state.rulerW + 70) {
-      ctx2d.fillText(rowInfo[1].moving ? '和弦·换挡中' + (rowInfo[1].dir > 0 ? ' ▶▶' : ' ◀◀') : '上排·和弦', rulerLeft - sx + 2, gh - 24);
-      ctx2d.fillText(rowInfo[0].moving ? '主旋律·换挡中' + (rowInfo[0].dir > 0 ? ' ▶▶' : ' ◀◀') : '下排·主旋律', rulerLeft - sx + 2, gh - 7);
+    if (left - sx > state.rulerW + 92) {
+      ctx2d.fillText(rowInfo[1].moving ? '和弦·换挡中' + (rowInfo[1].dir > 0 ? ' ▶▶' : ' ◀◀') : '上排·和弦·' + PP.gearName(rowInfo[1].s), rulerLeft - sx + 2, gh - 24);
+      ctx2d.fillText(rowInfo[0].moving ? '主旋律·换挡中' + (rowInfo[0].dir > 0 ? ' ▶▶' : ' ◀◀') : '下排·主旋律·' + PP.gearName(rowInfo[0].s), rulerLeft - sx + 2, gh - 7);
     }
     ctx2d.textAlign = 'center';
 
@@ -455,7 +456,9 @@
     $('stBpm').textContent = state.tempoMap && state.tempoMap.count > 1
       ? Math.round(state.tempoMap.minBpm) + '~' + Math.round(state.tempoMap.maxBpm)
       : String(state.bpm);
-    $('stTr').textContent = state.transpose ? (state.transpose > 0 ? '+' : '') + state.transpose : '0';
+    $('stTr').textContent = state.segTranspose
+      ? state.segTranspose.map(function (g) { return (g.s > 0 ? '+' : '') + g.s; }).join('/')
+      : state.transpose ? (state.transpose > 0 ? '+' : '') + state.transpose : '0';
     var sh = state.report && state.report.shifts ? state.report.shifts : [0, 0];
     $('stShift').textContent = sh[0] + ' / ' + sh[1];
   }
@@ -668,7 +671,7 @@
       }
     });
     return {
-      midi: { ticksPerBeat: state.midi.ticksPerBeat, format: state.midi.format, tempos: state.midi.tempos, tracks: tracks },
+      midi: { ticksPerBeat: state.midi.ticksPerBeat, format: state.midi.format, tempos: state.midi.tempos, keysigs: state.midi.keysigs, tracks: tracks },
       mel: mel, cho: cho
     };
   }
@@ -678,7 +681,8 @@
       melodyTracks: eff.mel, chordTracks: eff.cho,
       excludeDrums: $('chkDrums').checked,
       transpose: $('selTranspose').value === 'auto' ? 'auto' : parseInt($('selTranspose').value, 10),
-      bpm: parseInt($('bpm').value, 10) || 120 // MIDI 无速度事件时换挡提前量按此速度折算
+      bpm: parseInt($('bpm').value, 10) || 120, // MIDI 无速度事件时换挡提前量按此速度折算
+      home: $('chkHome').checked // 曲首强制归位（连按 ◀ 钉底到初始档 A0）
     });
     if (res.report.empty) { setMsg('所选轨道没有可转换的音符'); return; }
     pushUndo();
@@ -686,6 +690,7 @@
     state.endCol = res.endCol;
     state.midi = eff.midi;
     state.transpose = res.transpose;
+    state.segTranspose = res.segTranspose || null;
     state.mmPerBeat = res.mmPerBeat;
     state.report = res.report;
     state.tempoMap = PP.makeTempoMap(eff.midi.tempos, eff.midi.ticksPerBeat);
@@ -694,7 +699,10 @@
       $('bpm').value = state.bpm;
     }
     var r = res.report, parts = [];
-    if (res.transpose) parts.push('移调 ' + (res.transpose > 0 ? '+' : '') + res.transpose + ' 半音');
+    if (res.segTranspose) parts.push('按调号分段移调 ' + res.segTranspose.map(function (g) { return (g.s > 0 ? '+' : '') + g.s; }).join('/'));
+    else if (res.transpose) parts.push('移调 ' + (res.transpose > 0 ? '+' : '') + res.transpose + ' 半音');
+    if (r.homeDelay) parts.push('曲首归位顺延 ' + r.homeDelay + ' 拍');
+    if (r.homing && (r.homing[0] || r.homing[1])) parts.push('归位孔 ◀×' + r.homing[0] + '/' + r.homing[1] + '（钉底 A0）');
     if (r.scale > 1) parts.push('按最密间隔拉长纸带 ×' + r.scale + '（节奏零失真）');
     if (r.blackMapped) parts.push(r.blackMapped + ' 黑键就近映射白键');
     if (r.shifts[0] || r.shifts[1]) parts.push('换挡键 主 ' + r.shifts[0] + ' / 和 ' + r.shifts[1]);
@@ -862,7 +870,7 @@
 
   function saveProject() {
     if (!state.holes.length) { setMsg('纸带为空'); return; }
-    var data = { v: 1, app: 'perfect-piano', bpm: state.bpm, transpose: state.transpose, mmPerBeat: state.mmPerBeat, holes: state.holes, endCol: state.endCol };
+    var data = { v: 1, app: 'perfect-piano', bpm: state.bpm, transpose: state.transpose, segTranspose: state.segTranspose, mmPerBeat: state.mmPerBeat, holes: state.holes, endCol: state.endCol };
     download('纸带钢琴工程.json', new Blob([JSON.stringify(data)], { type: 'application/json' }));
   }
   function openProjectFile(file) {
@@ -874,11 +882,12 @@
         pushUndo();
         state.bpm = d.bpm || 120;
         state.transpose = d.transpose | 0;
+        state.segTranspose = Array.isArray(d.segTranspose) ? d.segTranspose : null;
         state.mmPerBeat = d.mmPerBeat || PHYS.mmPerBeat;
         state.tempoMap = null;
         state.report = null;
         state.holes = d.holes.filter(function (h) {
-          return Number.isInteger(h.col) && h.col >= 0 &&
+          return Number.isInteger(h.col) && h.col >= -64 && // 负列 = 头部留白里的归位/升挡孔（下限约 -52）
             (h.row === 0 || h.row === 1) && Number.isInteger(h.lane) && h.lane >= 0 && h.lane < LANES &&
             (h.midi == null || (Number.isInteger(h.midi) && h.midi >= 0 && h.midi <= 127));
         }).map(function (h) { return { col: h.col, row: h.row, lane: h.lane, midi: h.midi == null ? null : h.midi }; });
@@ -978,7 +987,7 @@
     state.transpose = 0;
     state.mmPerBeat = PHYS.mmPerBeat;
     state.report = { shifts: res.shifts, blackMapped: 0, clamped: 0, pushedNotes: 0, holeCount: res.holes.length };
-    setMsg('示例曲《小星星》已载入（下排主旋律 + 上排和弦），可播放试听');
+    setMsg('示例曲《小星星》已载入（两排曲首各升挡 2 次到 ' + PP.gearName(2) + ' 档），可播放试听');
     updateSpacer(); draw(); updateStatus();
   }
 

@@ -1,7 +1,7 @@
 /* ============================================================
  * 30音纸带音乐盒打孔工作室 - MIDI 解析器（零依赖）
- * 支持：Format 0/1、running status、tempo map、轨道名
- * 输出：{ format, ticksPerBeat, tracks, tempos }
+ * 支持：Format 0/1、running status、tempo map、轨道名、调号事件
+ * 输出：{ format, ticksPerBeat, tracks, tempos, keysigs }
  * ============================================================ */
 (function (global) {
   'use strict';
@@ -42,9 +42,10 @@
 
   /**
    * 解析 MIDI 文件（ArrayBuffer）
-   * @returns {{format:number, ticksPerBeat:number, tracks:Array, tempos:Array}}
+   * @returns {{format:number, ticksPerBeat:number, tracks:Array, tempos:Array, keysigs:Array}}
    *   tracks[i] = { index, name, channels:number[], notes:[{tick,note,velocity,channel}] }
    *   tempos = [{tick, usPerQuarter}]（已按出现顺序合并所有轨道）
+   *   keysigs = [{tick, sf, minor}]（调号事件；sf 升降号数 -7..+7，minor=true 小调；缺省视为 C 大调）
    */
   function parseMidi(buffer) {
     var view = new DataView(buffer);
@@ -71,6 +72,7 @@
     var ticksPerBeat = division || 480;
 
     var tempos = [];
+    var keysigs = [];
     var tracks = [];
 
     while (pos + 8 <= view.byteLength) {
@@ -106,6 +108,9 @@
               tick: tick,
               usPerQuarter: (view.getUint8(pos) << 16) | (view.getUint8(pos + 1) << 8) | view.getUint8(pos + 2)
             });
+          } else if (type === 0x59 && len === 2) { // 调号：sf（有符号升降号数）+ mi（0 大调 1 小调）
+            var sf = view.getUint8(pos);
+            keysigs.push({ tick: tick, sf: sf >= 128 ? sf - 256 : sf, minor: view.getUint8(pos + 1) === 1 });
           }
           pos += len;
         } else if (status === 0xf0 || status === 0xf7) { // 系统独占
@@ -137,7 +142,8 @@
 
     if (!tracks.length) throw new MidiParseError('MIDI 文件中没有轨道数据');
     tempos.sort(function (a, b) { return a.tick - b.tick; });
-    return { format: format, ticksPerBeat: ticksPerBeat, tracks: tracks, tempos: tempos };
+    keysigs.sort(function (a, b) { return a.tick - b.tick; });
+    return { format: format, ticksPerBeat: ticksPerBeat, tracks: tracks, tempos: tempos, keysigs: keysigs };
   }
 
   global.MidiParser = { parseMidi: parseMidi, MidiParseError: MidiParseError };

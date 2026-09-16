@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -174,10 +174,11 @@
   <div class="panel">
     <h3>导入 MIDI</h3>
     <div class="hint">为每个轨道选择用途：<b style="color:#8fd0a5">主旋律</b> → 下排键盘，<b style="color:#8fb8e8">和弦</b> → 上排键盘。
-      转换会自动移调（白键优先）、把黑键就近映射到白键，并在超出当前 14 键窗口时自动打换挡键孔移动键盘。</div>
+      键盘 4 档（A0→A2→A4→D6，每次换挡移 2 个八度），转换会自动移调（白键优先）、把黑键就近映射到白键，并在超出当前 14 键窗口时自动打换挡键孔移动键盘。</div>
     <div id="trackList"></div>
     <label class="hint"><input type="checkbox" id="chkDrums" checked> 排除打击乐通道（通道 10）</label>
     <label class="hint"><input type="checkbox" id="chkSplit" checked> 单轨按音高拆分：主旋律轨中低于 C4 的音归入和弦排（钢琴 MIDI 常见单轨双手合并时勾选）</label>
+    <label class="hint"><input type="checkbox" id="chkHome" checked> 曲首强制归位：连按 3 次 ◀◀ 钉底到初始档 A0（键盘初始位置不确定；必要时整曲顺延给归位与升挡留时间）</label>
     <div class="dlg-actions">
       <span class="hint" id="dlgInfo"></span>
       <span class="right">
@@ -261,10 +262,10 @@
   </div>
 </div>
 
-<script src="js/midi-parser.js?v=2"></script>
-<script src="js/pp-tape.js?v=7"></script>
+<script src="js/midi-parser.js?v=3"></script>
+<script src="js/pp-tape.js?v=12"></script>
 <script src="js/synth.js"></script>
 <script src="js/punch-sender.js?v=2"></script>
-<script src="js/app.js?v=20"></script>
+<script src="js/app.js?v=22"></script>
 </body>
 </html>
