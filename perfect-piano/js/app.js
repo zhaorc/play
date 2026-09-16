@@ -928,11 +928,11 @@
     s.push('<line x1="0" y1="' + PHYS.leadInMM + '" x2="' + geo.wMM + '" y2="' + PHYS.leadInMM + '" stroke="#66c" stroke-width="0.25" stroke-dasharray="1,1"/>');
     var melStart = PHYS.leadInMM + PHYS.stationGapMM;
     s.push('<line x1="0" y1="' + melStart + '" x2="' + geo.wMM + '" y2="' + melStart + '" stroke="#c66" stroke-width="0.25" stroke-dasharray="1,1"/>');
-    // 孔（按排分色：主旋律红橙 / 和弦绿；换挡键孔灰描边）
+    // 孔（按排分色：主旋律红橙 / 和弦绿；换挡键孔按方向分色描边：◀◀ 红 / ▶▶ 绿）
     for (var j = 0; j < geo.holes.length; j++) {
       var hh = geo.holes[j];
       if (PP.isShiftLane(hh.lane)) {
-        s.push('<circle cx="' + hh.x.toFixed(2) + '" cy="' + hh.y.toFixed(2) + '" r="' + PHYS.holeRadiusMM + '" fill="none" stroke="#888" stroke-width="0.2"/>');
+        s.push('<circle cx="' + hh.x.toFixed(2) + '" cy="' + hh.y.toFixed(2) + '" r="' + PHYS.holeRadiusMM + '" fill="none" stroke="' + (hh.lane === 0 ? '#c9563a' : '#4d9a6c') + '" stroke-width="0.2"/>');
       } else {
         s.push('<circle cx="' + hh.x.toFixed(2) + '" cy="' + hh.y.toFixed(2) + '" r="' + PHYS.holeRadiusMM + '" fill="' + (hh.row === 0 ? '#a8431f' : '#1e7a4f') + '"/>');
       }
@@ -968,7 +968,7 @@
       var hh = geo.holes[j];
       c.beginPath();
       c.arc(hh.x * scale, hh.y * scale, PHYS.holeRadiusMM * scale, 0, 6.2832);
-      if (PP.isShiftLane(hh.lane)) { c.strokeStyle = '#888'; c.lineWidth = Math.max(1, scale * 0.2); c.stroke(); }
+      if (PP.isShiftLane(hh.lane)) { c.strokeStyle = hh.lane === 0 ? '#c9563a' : '#4d9a6c'; c.lineWidth = Math.max(1, scale * 0.2); c.stroke(); }
       else { c.fillStyle = hh.row === 0 ? '#a8431f' : '#1e7a4f'; c.fill(); }
     }
     cv.toBlob(function (blob) {
