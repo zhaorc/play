@@ -18,13 +18,11 @@
 
   // ---------------- 状态 ----------------
   var state = {
-    holes: [],            // {col,row,lane,midi}，按 col/row/lane 升序；lane 0/15 为换挡键孔
+    holes: [],            // {col,row,lane,midi}，按 col/row/lane 升序；lane 0/14 为换挡键孔
     endCol: 0,
     midi: null,
     bpm: 100,
     tempoMap: null,       // PP.makeTempoMap 结果；null = 按 state.bpm 恒定速度
-    transpose: 0,
-    segTranspose: null,   // 按调号分段移调 [{tick0, sf, minor, s}]；null = 全曲统一移调
     mmPerBeat: PHYS.mmPerBeat, // 本曲每拍毫米数（最密间隔拉长后可能 > 标准值）
     report: null,         // 最近一次转换报告
     shiftTL: null,        // 每排换挡事件时间线（play 时构建），驱动键盘换位与音名栏
@@ -47,6 +45,15 @@
   function stationPx() { return PHYS.stationGapMM * pxPerMM(); }
   function leadOutPx() { return PHYS.leadOutMM * pxPerMM(); }
   function tapeWpx() { return PHYS.tapeWidthMM * pxPerMM(); }
+  // 两排滚轮合并后的 x 栅格（下排右移 D = 半间距 → 合并为半间距步进的等距栅格）
+  function rollerGridMM() {
+    var gp = PHYS.keyPitchMM / 2;
+    var x0 = PHYS.bandX0MM - PHYS.keyPitchMM - gp;                                  // 上排 ◀◀ 左侧缘
+    var x1 = PHYS.bandX0MM + PHYS.keyBandMM + PHYS.keyPitchMM + PHYS.rowOffsetMM + gp; // 下排 ▶▶ 右侧缘
+    var a = [];
+    for (var x = x0; x <= x1 + 1e-6; x += gp) a.push(x);
+    return a;
+  }
   function pxPerBeat() { return state.mmPerBeat * pxPerMM(); } // 拉长曲每拍占更多像素：纸带"变长"而非"变窄"
   function totalBeats() { return state.endCol / PPB; }
   function holeKey(h) { return h.col + ':' + h.row + ':' + h.lane; }
@@ -76,7 +83,7 @@
   }
   function insertHole(col, row, lane) {
     if (findHole(col, row, lane) >= 0) return;
-    var midi = (lane >= 1 && lane <= 14) ? PP.whiteToMidi(PP.GEAR_STARTS[0] + lane - 1) : null; // 烘焙值按初始档 A0 窗口；播放时实际音高随键盘档位
+    var midi = PP.isShiftLane(lane) ? null : PP.soundingMidi(lane, 0); // 烘焙值按初始档 A0 窗口；播放时实际音高随键盘档位
     state.holes.splice(lowerBound(col, row, lane), 0, { col: col, row: row, lane: lane, midi: midi });
     if (col + 1 > state.endCol) { state.endCol = col + 1; updateSpacer(); }
   }
@@ -181,15 +188,13 @@
     ctx2d.fillStyle = '#f5f1e4';
     ctx2d.fillRect(left, gh, tapeWpx(), tapeEndY - gh);
 
-    // 两排轨道底色（同排轮心距 8mm；上下排错位 4mm）
-    var cellW = PHYS.lanePitchMM * ppm;
+    // 两排轨道底色（同排键间距 keyPitchMM；下排整体右移 D 与上排交错）
+    var cellW = PHYS.keyPitchMM * ppm;
     for (var k = 0; k < LANES; k++) {
-      var x0 = left + (PHYS.lowerX0MM + k * PHYS.lanePitchMM) * ppm - cellW / 2;
       ctx2d.fillStyle = 'rgba(190,120,50,0.10)';
-      ctx2d.fillRect(x0, gh, cellW, tapeEndY - gh);
-      var x1 = left + (PHYS.upperX0MM + k * PHYS.lanePitchMM) * ppm - cellW / 2;
+      ctx2d.fillRect(left + (PP.laneXMM(0, k) - PHYS.keyPitchMM / 2) * ppm, gh, cellW, tapeEndY - gh);
       ctx2d.fillStyle = 'rgba(70,120,200,0.10)';
-      ctx2d.fillRect(x1, gh, cellW, tapeEndY - gh);
+      ctx2d.fillRect(left + (PP.laneXMM(1, k) - PHYS.keyPitchMM / 2) * ppm, gh, cellW, tapeEndY - gh);
     }
 
     // 头部/尾部留白
@@ -197,20 +202,22 @@
     ctx2d.fillRect(left, gh, tapeWpx(), lip);
     ctx2d.fillRect(left, tapeEndY - lop, tapeWpx(), lop);
 
-    // 4mm 交错轨格竖线（9mm..141mm）
+    // 滚轮轨格竖线（两排滚轮合并后的半间距等距栅格）
+    var grid = rollerGridMM();
+    var gridX0 = grid[0] - PHYS.keyPitchMM / 2, gridX1 = grid[grid.length - 1] + PHYS.keyPitchMM / 2;
     ctx2d.strokeStyle = 'rgba(120,110,85,0.30)';
     ctx2d.lineWidth = 1;
     ctx2d.beginPath();
-    for (var gx = 9; gx <= 141.01; gx += 4) {
+    for (var gx = gridX0; gx <= gridX1 + 0.01; gx += PHYS.keyPitchMM / 2) {
       var xx = left + gx * ppm + 0.5;
       ctx2d.moveTo(xx, gh); ctx2d.lineTo(xx, tapeEndY);
     }
     ctx2d.stroke();
-    // 轨区边界（最外轨缘）
+    // 轨区边界（最外侧滚轮缘）
     ctx2d.strokeStyle = 'rgba(120,100,60,0.55)';
     ctx2d.beginPath();
-    ctx2d.moveTo(left + 9 * ppm + 0.5, gh); ctx2d.lineTo(left + 9 * ppm + 0.5, tapeEndY);
-    ctx2d.moveTo(left + 141 * ppm + 0.5, gh); ctx2d.lineTo(left + 141 * ppm + 0.5, tapeEndY);
+    ctx2d.moveTo(left + gridX0 * ppm + 0.5, gh); ctx2d.lineTo(left + gridX0 * ppm + 0.5, tapeEndY);
+    ctx2d.moveTo(left + gridX1 * ppm + 0.5, gh); ctx2d.lineTo(left + gridX1 * ppm + 0.5, tapeEndY);
     ctx2d.stroke();
 
     // 节拍网格：主旋律站（实线）+ 和弦站（虚线，偏上 105mm）
@@ -416,9 +423,9 @@
       for (var k2 = 0; k2 < LANES; k2++) {
         var cx = left + PP.laneXMM(r, k2) * ppm - sx;
         if (cx < -10 || cx > vw + 10) continue;
-        var txt = k2 === 0 ? '◀◀' : k2 === 15 ? '▶▶' : PP.whiteName(PP.GEAR_STARTS[sh] + k2 - 1);
-        // 到界方向的换挡键当前不可再按 → 变暗（底界 A0=0 档 / 顶界 D6=W_MAX 档）；换挡滑动中白键名灰显；已换挡白键标签金色
-        var atBoundDown = k2 === 0 && sh <= 0, atBoundUp = k2 === 15 && sh >= PP.W_MAX;
+        var txt = k2 === 0 ? '◀' : k2 === LANES - 1 ? '▶▶' : PP.midiName(PP.GEAR_BASES[sh] + k2 - 1);
+        // 到界方向的换挡键当前不可再按 → 变暗（底界 A0=0 档 / 顶界 D6=W_MAX 档）；换挡滑动中白键名灰显；已换挡键名金色
+        var atBoundDown = k2 === 0 && sh <= 0, atBoundUp = k2 === LANES - 1 && sh >= PP.W_MAX;
         if (atBoundDown || atBoundUp) ctx2d.fillStyle = '#555f6b';
         else if (PP.isShiftLane(k2)) ctx2d.fillStyle = r === 0 ? '#c98a5f' : '#7fa6d8';
         else if (info.moving) ctx2d.fillStyle = '#6b7684';
@@ -456,9 +463,6 @@
     $('stBpm').textContent = state.tempoMap && state.tempoMap.count > 1
       ? Math.round(state.tempoMap.minBpm) + '~' + Math.round(state.tempoMap.maxBpm)
       : String(state.bpm);
-    $('stTr').textContent = state.segTranspose
-      ? state.segTranspose.map(function (g) { return (g.s > 0 ? '+' : '') + g.s; }).join('/')
-      : state.transpose ? (state.transpose > 0 ? '+' : '') + state.transpose : '0';
     var sh = state.report && state.report.shifts ? state.report.shifts : [0, 0];
     $('stShift').textContent = sh[0] + ' / ' + sh[1];
   }
@@ -473,8 +477,8 @@
     var ppm = pxPerMM(), left = tapeLeftX();
     var mmX = (x - left) / ppm;
     if (mmX < 0 || mmX > PHYS.tapeWidthMM) return null;
-    // 最近轨位（上下排 32 轨中就近，容差 4mm）
-    var best = null, bestD = 4;
+    // 最近轨位（上下排 2×15 轨中就近，容差 = 半键间距）
+    var best = null, bestD = PHYS.keyPitchMM / 2 - 0.05;
     for (var r = 0; r < 2; r++) {
       for (var k = 0; k < LANES; k++) {
         var d = Math.abs(mmX - PP.laneXMM(r, k));
@@ -571,7 +575,7 @@
         // 换算到音频上下文时间轴：audio now + 与 perf 时钟的差
         var at = Synth.now() + Math.max(0.001, when - now);
         if (PP.isShiftLane(h.lane)) {
-          Synth.play(45, at, 0.3); // 换挡键：机械换位声（键盘移动在 shiftAt 中体现）
+          // 换挡孔不发音，仅高亮闪烁指示换挡时刻
         } else {
           // 实际音高由"键位 × 该孔击发瞬间的键盘挡位"决定，与转换烘焙的 h.midi 等价但物理路径真实
           var shHere = PP.shiftAt(state.shiftTL, h.row, tb);
@@ -680,7 +684,6 @@
     var res = PP.convertFromMidi(eff.midi, {
       melodyTracks: eff.mel, chordTracks: eff.cho,
       excludeDrums: $('chkDrums').checked,
-      transpose: $('selTranspose').value === 'auto' ? 'auto' : parseInt($('selTranspose').value, 10),
       bpm: parseInt($('bpm').value, 10) || 120, // MIDI 无速度事件时换挡提前量按此速度折算
       home: $('chkHome').checked // 曲首强制归位（连按 ◀ 钉底到初始档 A0）
     });
@@ -689,8 +692,6 @@
     state.holes = res.holes;
     state.endCol = res.endCol;
     state.midi = eff.midi;
-    state.transpose = res.transpose;
-    state.segTranspose = res.segTranspose || null;
     state.mmPerBeat = res.mmPerBeat;
     state.report = res.report;
     state.tempoMap = PP.makeTempoMap(eff.midi.tempos, eff.midi.ticksPerBeat);
@@ -699,14 +700,11 @@
       $('bpm').value = state.bpm;
     }
     var r = res.report, parts = [];
-    if (res.segTranspose) parts.push('按调号分段移调 ' + res.segTranspose.map(function (g) { return (g.s > 0 ? '+' : '') + g.s; }).join('/'));
-    else if (res.transpose) parts.push('移调 ' + (res.transpose > 0 ? '+' : '') + res.transpose + ' 半音');
     if (r.homeDelay) parts.push('曲首归位顺延 ' + r.homeDelay + ' 拍');
     if (r.homing && (r.homing[0] || r.homing[1])) parts.push('归位孔 ◀×' + r.homing[0] + '/' + r.homing[1] + '（钉底 A0）');
     if (r.scale > 1) parts.push('按最密间隔拉长纸带 ×' + r.scale + '（节奏零失真）');
-    if (r.blackMapped) parts.push(r.blackMapped + ' 黑键就近映射白键');
     if (r.shifts[0] || r.shifts[1]) parts.push('换挡键 主 ' + r.shifts[0] + ' / 和 ' + r.shifts[1]);
-    if (r.clamped) parts.push(r.clamped + ' 音超出换挡范围按就近键击发');
+    if (r.clamped) parts.push(r.clamped + ' 音超出档位音域按就近键击发');
     if (r.pushedNotes) parts.push(r.pushedNotes + ' 音因最小孔距后移');
     if (r.dropped) parts.push(r.dropped + ' 音过密且紧邻换挡、物理打不下已舍弃');
     setMsg('转换完成：' + r.holeCount + ' 孔' + (parts.length ? '，' + parts.join('，') : ''));
@@ -718,7 +716,6 @@
     reader.onload = function () {
       try {
         state.midi = window.MidiParser.parseMidi(reader.result);
-        $('selTranspose').value = 'auto';
         openImportDialog();
       } catch (err) {
         setMsg('MIDI 解析失败：' + (err.message || err));
@@ -870,7 +867,7 @@
 
   function saveProject() {
     if (!state.holes.length) { setMsg('纸带为空'); return; }
-    var data = { v: 1, app: 'perfect-piano', bpm: state.bpm, transpose: state.transpose, segTranspose: state.segTranspose, mmPerBeat: state.mmPerBeat, holes: state.holes, endCol: state.endCol };
+    var data = { v: 1, app: 'perfect-piano', bpm: state.bpm, mmPerBeat: state.mmPerBeat, holes: state.holes, endCol: state.endCol };
     download('纸带钢琴工程.json', new Blob([JSON.stringify(data)], { type: 'application/json' }));
   }
   function openProjectFile(file) {
@@ -881,8 +878,6 @@
         if (!Array.isArray(d.holes)) throw new Error('格式不正确');
         pushUndo();
         state.bpm = d.bpm || 120;
-        state.transpose = d.transpose | 0;
-        state.segTranspose = Array.isArray(d.segTranspose) ? d.segTranspose : null;
         state.mmPerBeat = d.mmPerBeat || PHYS.mmPerBeat;
         state.tempoMap = null;
         state.report = null;
@@ -911,13 +906,15 @@
     s.push('<svg xmlns="http://www.w3.org/2000/svg" width="' + geo.wMM.toFixed(2) + 'mm" height="' + geo.hMM.toFixed(2) + 'mm" viewBox="0 0 ' + geo.wMM.toFixed(2) + ' ' + geo.hMM.toFixed(2) + '">');
     s.push('<rect x="0" y="0" width="' + geo.wMM.toFixed(2) + '" height="' + geo.hMM.toFixed(2) + '" fill="white"/>');
     s.push('<rect x="0.2" y="0.2" width="' + (geo.wMM - 0.4).toFixed(2) + '" height="' + (geo.hMM - 0.4).toFixed(2) + '" fill="none" stroke="#999" stroke-width="0.2"/>');
-    // 4mm 交错轨格（9..141mm）
-    for (var gx = 9; gx <= 141.01; gx += 4) {
-      s.push('<line x1="' + gx + '" y1="0" x2="' + gx + '" y2="' + geo.hMM.toFixed(2) + '" stroke="#e4e4e4" stroke-width="0.12"/>');
+    // 滚轮轨格（两排合并后的半间距等距栅格）
+    var grid = rollerGridMM();
+    var gridX0 = grid[0] - PHYS.keyPitchMM / 2, gridX1 = grid[grid.length - 1] + PHYS.keyPitchMM / 2;
+    for (var gi = 0; gi < grid.length; gi++) {
+      s.push('<line x1="' + grid[gi].toFixed(3) + '" y1="0" x2="' + grid[gi].toFixed(3) + '" y2="' + geo.hMM.toFixed(2) + '" stroke="#e4e4e4" stroke-width="0.12"/>');
     }
-    // 轨区边界
-    s.push('<line x1="9" y1="0" x2="9" y2="' + geo.hMM.toFixed(2) + '" stroke="#bbb" stroke-width="0.25"/>');
-    s.push('<line x1="141" y1="0" x2="141" y2="' + geo.hMM.toFixed(2) + '" stroke="#bbb" stroke-width="0.25"/>');
+    // 轨区边界（最外侧滚轮缘）
+    s.push('<line x1="' + gridX0.toFixed(3) + '" y1="0" x2="' + gridX0.toFixed(3) + '" y2="' + geo.hMM.toFixed(2) + '" stroke="#bbb" stroke-width="0.25"/>');
+    s.push('<line x1="' + gridX1.toFixed(3) + '" y1="0" x2="' + gridX1.toFixed(3) + '" y2="' + geo.hMM.toFixed(2) + '" stroke="#bbb" stroke-width="0.25"/>');
     // 节拍线：和弦站（虚线，靠头部）+ 主旋律站（实线，靠带尾 105mm）
     for (var i = 0; i < geo.beatYs.length; i++) {
       var y1 = geo.beatYs[i], y2 = y1 + PHYS.stationGapMM;
@@ -955,8 +952,9 @@
     c.fillRect(0, 0, cv.width, cv.height);
     c.strokeStyle = '#e0e0e0';
     c.lineWidth = Math.max(1, scale * 0.12);
-    for (var gx = 9; gx <= 141.01; gx += 4) {
-      c.beginPath(); c.moveTo(gx * scale, 0); c.lineTo(gx * scale, cv.height); c.stroke();
+    var pgrid = rollerGridMM();
+    for (var gi2 = 0; gi2 < pgrid.length; gi2++) {
+      c.beginPath(); c.moveTo(pgrid[gi2] * scale, 0); c.lineTo(pgrid[gi2] * scale, cv.height); c.stroke();
     }
     c.strokeStyle = '#e6e6e6';
     for (var i = 0; i < geo.beatYs.length; i++) {
@@ -984,10 +982,9 @@
     state.endCol = res.endCol;
     state.bpm = res.bpm; $('bpm').value = res.bpm;
     state.tempoMap = null;
-    state.transpose = 0;
     state.mmPerBeat = PHYS.mmPerBeat;
-    state.report = { shifts: res.shifts, blackMapped: 0, clamped: 0, pushedNotes: 0, holeCount: res.holes.length };
-    setMsg('示例曲《小星星》已载入（两排曲首各升挡 2 次到 ' + PP.gearName(2) + ' 档），可播放试听');
+    state.report = { shifts: res.shifts, clamped: 0, pushedNotes: 0, holeCount: res.holes.length };
+    setMsg('示例曲《小星星》已载入（两排曲首各升挡 3 次到 ' + PP.gearName(3) + ' 档），可播放试听');
     updateSpacer(); draw(); updateStatus();
   }
 
@@ -1066,11 +1063,6 @@
   });
 
   // ---------------- 启动 ----------------
-  (function initTransposeOptions() {
-    var sel = $('selTranspose'), opts = ['<option value="auto" selected>自动</option>'];
-    for (var t = -6; t <= 6; t++) opts.push('<option value="' + t + '">' + (t > 0 ? '+' : '') + t + '</option>');
-    sel.innerHTML = opts.join('');
-  })();
   fitWidth(); // 启动即纸带全宽贴合视口
   resizeCanvas();
   updateStatus();

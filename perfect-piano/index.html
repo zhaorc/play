@@ -165,7 +165,6 @@
   <span>带长 <b id="stLen">0 mm</b></span>
   <span>时长 <b id="stDur">0:00</b> @ <b id="stBpm">100</b> BPM</span>
   <span>进度 <b id="stPos">0:00</b></span>
-  <span>移调 <b id="stTr">0</b></span>
   <span>换挡键(主/和) <b id="stShift">0 / 0</b></span>
   <span id="stMsg"></span>
 </div>
@@ -174,7 +173,8 @@
   <div class="panel">
     <h3>导入 MIDI</h3>
     <div class="hint">为每个轨道选择用途：<b style="color:#8fd0a5">主旋律</b> → 下排键盘，<b style="color:#8fb8e8">和弦</b> → 上排键盘。
-      键盘 4 档（A0→A2→A4→D6，每次换挡移 2 个八度），转换会自动移调（白键优先）、把黑键就近映射到白键，并在超出当前 14 键窗口时自动打换挡键孔移动键盘。</div>
+      每档 8 个白键（含黑键共 13 键），共 7 档（A0→A1→A2→A3→A4→A5→D6）；每个白键、黑键与双箭头按钮各由一条滚轮轨控制，
+      音高按原音精确落轨（不做移调），超出当前档窗口时自动打换挡键孔移动键盘。</div>
     <div id="trackList"></div>
     <label class="hint"><input type="checkbox" id="chkDrums" checked> 排除打击乐通道（通道 10）</label>
     <label class="hint"><input type="checkbox" id="chkSplit" checked> 单轨按音高拆分：主旋律轨中低于 C4 的音归入和弦排（钢琴 MIDI 常见单轨双手合并时勾选）</label>
@@ -182,8 +182,6 @@
     <div class="dlg-actions">
       <span class="hint" id="dlgInfo"></span>
       <span class="right">
-        <span class="lbl">移调</span>
-        <select id="selTranspose"></select>
         <button id="btnDlgCancel">取消</button>
         <button id="btnDlgOk" class="primary">开始转换</button>
       </span>
@@ -263,9 +261,9 @@
 </div>
 
 <script src="js/midi-parser.js?v=3"></script>
-<script src="js/pp-tape.js?v=12"></script>
+<script src="js/pp-tape.js?v=13"></script>
 <script src="js/synth.js"></script>
 <script src="js/punch-sender.js?v=2"></script>
-<script src="js/app.js?v=24"></script>
+<script src="js/app.js?v=26"></script>
 </body>
 </html>
