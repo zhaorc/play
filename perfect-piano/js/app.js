@@ -307,9 +307,9 @@
         ctx2d.beginPath(); ctx2d.arc(hx, hy, rHole, 0, 6.2832);
         ctx2d.fillStyle = shiftHole ? '#e8e8e8' : (h.row === 0 ? '#d95f2e' : '#2fa89c'); ctx2d.fill();
       } else if (shiftHole) {
-        // 换挡键孔：描边圆（◀◀ 红 / ▶▶ 绿）
+        // 换挡键孔：空心描边圆（◀◀ 红 / ▶▶ 绿），填充纸带底色以呈现空心
         ctx2d.beginPath(); ctx2d.arc(hx, hy, rHole, 0, 6.2832);
-        ctx2d.fillStyle = '#2b2620'; ctx2d.fill();
+        ctx2d.fillStyle = '#f5f1e4'; ctx2d.fill();
         ctx2d.strokeStyle = h.lane === 0 ? '#c9563a' : '#4d9a6c';
         ctx2d.lineWidth = 1.4; ctx2d.stroke();
       } else {
