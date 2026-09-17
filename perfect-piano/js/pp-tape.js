@@ -7,21 +7,19 @@
  *  - 每档 N=7 白键：窗口 2N-1 = 13 槽 = 11~12 个真实键 + 2 虚拟位；
  *    虚拟位也配占位滚轮（非 A 锚档位压真实键），压在虚拟位上的轨为
  *    死轨（该档永不打孔，isDeadLane 按档判定）
- *  - 档位宽度 133mm = N·w + (N-1)·b → w = 931/85 ≈ 10.953，b = 6w/7 ≈ 9.388；
- *    槽栅距 p = (w+b)/2 = 13w/14 ≈ 10.171mm（同排孔缘隔 7.67mm ≥ 2mm ✓）
+ *  - 档位宽度 130mm = N·w + (N-1)·b → w = 910/85 ≈ 10.706，b = 6w/7 ≈ 9.176；
+ *    槽栅距 p = (w+b)/2 = 13w/14 ≈ 9.941mm（同排孔缘隔 7.44mm ≥ 2mm ✓）
  *  - 槽栅周期 14 槽 = 一个八度；档位步进 12 槽（相邻档共享边界槽），
  *    档位表锚槽 [0,12,24,36,48,60,72,76] = A0,G1,F2,E3,D4,C5,B5,D6
  *    （各档半音步长 10/11 交替：A 锚窗口 10 半音、F/C 锚 11 半音）
  *  - 每排 15 滚轮：lane 0 = ◀◀、lane 1..13 = 槽 0..12、lane 14 = ▶▶；
- *    换挡滚轮在档位宽度外 shiftGapMM 处，沿走带方向再向带尾错开
- *    shiftYOffMM（滚轮与孔同步错开 → 触发时序不变，防拨片干涉）
- *  - 下排（主旋律 row0）整排右移 D = p/2 ≈ 5.085mm：两排在同一槽栅上，
+ *    换挡滚轮在档位宽度外 shiftGapMM=4.4 处（纯 x 几何即满足全孔距规格，
+ *    无需 y 方向错开）
+ *  - 下排（主旋律 row0）整排右移 D = p/2 ≈ 4.971mm：两排在同一槽栅上，
  *    跨排键孔对最小孔心距 = D ≥ 4.5mm（孔缘 ≥ 2mm 规格，含列量化
- *    Δy ≥ 0.75mm 的斜距 5.14mm ✓）
- *  - 孔缘间距规格 2mm（孔心 ≥ 4.5mm）：唯一可能违规的跨排对是
- *    换挡孔 vs 对排端键孔（Δx = shiftGap + w/2 − D ≈ 2.39mm），由
- *    convertCore 内 spacingGuard 检测并把换挡孔 ±1~3 列微移规避
- *    （换挡孔非乐音、600ms 提前量内有富余），移不动计入报告
+ *    Δy ≥ 0.75mm 的斜距 5.03mm ✓；换挡孔 vs 对排端键孔 ≈ 4.78mm ✓）
+ *  - 孔缘间距规格 2mm（孔心 ≥ 4.5mm）、孔缘距带边 1.5mm；spacingGuard
+ *    保留为休眠安全网（纯 x 已达标，正常永不触发），移不动计入报告
  *  - 换挡耗时 400ms（触发 → 键盘滑动到位，到位前仍按旧挡击发）、
  *    打孔提前量 600ms；曲首强制归位：连按 3 次 ◀ 钉底 A0
  *  - 音高 100% 精确落轨（不移调）；纸带自下而上走带，两排沿走带
@@ -59,11 +57,11 @@
   // ---- 物理规格（mm）----
   var PHYS = {
     tapeWidthMM: 150,     // 纸带总宽
-    gearWidthMM: 133,     // 档位宽度 = 窗口全部键宽之和（固定，与 N 无关）
+    gearWidthMM: 130,     // 档位宽度 = 窗口全部键宽之和（固定，与 N 无关）
     topStopMidi: 86,      // 最高档 D6（机械上止点）
     holeRadiusMM: 1.25,   // 打孔半径（孔径 2.5mm）
     minHoleC2C: 4.5,       // 孔缘间距 ≥ 2mm + 孔径 2.5 → 任意两孔最小孔心距
-    edgeMarginMM: 2.0,    // 最外侧孔缘距纸带边
+    edgeMarginMM: 1.5,    // 最外侧孔缘距纸带边
     leadInMM: 15,         // 头部留白
     leadOutMM: 15,        // 尾部留白
     mmPerBeat: 9,         // 每拍走带长度
@@ -71,19 +69,22 @@
     stationGapMM: 105,    // 两排滚轮沿走带方向间距
     shiftMs: 400,         // 换挡耗时：按下换挡键 → 键盘滑动到位
     shiftLeadMs: 600,     // 打孔提前量 = 400ms 换挡 + 200ms 余量
-    shiftGapMM: 2,        // 换挡滚轮中心距档位边（在档位宽度之外）
-    shiftYOffMM: 5        // 换挡滚轮沿走带方向向带尾错开（滚轮与孔同步 → 时序不变）
+    // 换挡滚轮中心距档位边 c=4.4（可行域 [4.12, 4.76]）：换挡孔 vs 对排端键孔的
+    // 孔心距 = c + w/2 − D ≈ 4.78 ≥ 4.5 → 纯 x 几何即满足全 2mm 孔距规格，
+    // 两排换挡孔对 Δx = D ≈ 4.97 ✓；无需 y 方向错开（shiftYOffMM = 0）
+    shiftGapMM: 4.4,
+    shiftYOffMM: 0        // 换挡滚轮沿走带方向错开量（130mm 档宽下不再需要，保留字段备用）
   };
   var PPB = 4; // 每拍编辑栅格数（col），1 col = 2.25mm
 
   // ---- 键宽与槽栅（白:黑 = 7:6；档位宽 = N·w + (N-1)·b）----
-  PHYS.whiteKeyMM = PHYS.gearWidthMM * 7 / (13 * N_WHITE - 6);  // 931/85 ≈ 10.9529
-  PHYS.blackKeyMM = PHYS.whiteKeyMM * 6 / 7;                    // ≈ 9.3882
-  PHYS.slotPitchMM = (PHYS.whiteKeyMM + PHYS.blackKeyMM) / 2;   // 13w/14 ≈ 10.1706
-  PHYS.rowOffsetMM = PHYS.slotPitchMM / 2;                      // D = 半槽栅 ≈ 5.0853（跨排最小孔心距）
+  PHYS.whiteKeyMM = PHYS.gearWidthMM * 7 / (13 * N_WHITE - 6);  // 910/85 ≈ 10.7059
+  PHYS.blackKeyMM = PHYS.whiteKeyMM * 6 / 7;                    // ≈ 9.1765
+  PHYS.slotPitchMM = (PHYS.whiteKeyMM + PHYS.blackKeyMM) / 2;   // 13w/14 ≈ 9.9412
+  PHYS.rowOffsetMM = PHYS.slotPitchMM / 2;                      // D = 半槽栅 ≈ 4.9706（跨排最小孔心距）
   // 档位带在纸带上的 x0：换挡轮（两侧 shiftGap）+ D 偏移整体居中于 150mm
   PHYS.bandX0MM = (PHYS.tapeWidthMM - (2 * PHYS.shiftGapMM + PHYS.gearWidthMM + PHYS.rowOffsetMM)) / 2
-    + PHYS.shiftGapMM; // ≈ 5.9574（最外孔缘距带边 ≈ 2.71mm ≥ 2mm ✓）
+    + PHYS.shiftGapMM; // ≈ 7.5147（最外孔缘距带边 ≈ 1.86mm ≥ 1.5mm ✓）
 
   // ---- 档位表：锚槽 0 起每档 +12 槽（相邻档共享边界槽），末档补 D6 上止点 ----
   var SLOT_STEP = SLOT_COUNT - 1; // 12
@@ -135,7 +136,7 @@
     return g > 0 ? g : 0;
   }
   // 孔在带长方向的坐标：下排（主旋律，row0）比同拍上排（和弦，row1）靠带尾 105mm；
-  // 换挡孔再 +shiftYOffMM（滚轮与孔同步错开，触发时序不变）。
+  // 换挡孔再加 shiftYOffMM（当前 0：130mm 档宽下无需错开）。
   // mmb：本曲每拍毫米数（最密间隔拉长后可能与 PHYS.mmPerBeat 不同），缺省标准值
   function holeYMM(col, row, lane, mmb) {
     return PHYS.leadInMM + (col / PPB) * (mmb || PHYS.mmPerBeat)
@@ -204,9 +205,10 @@
     var tm = opts.tempoMap && opts.tempoMap.beatToTime ? opts.tempoMap : null;
     var bpm0 = opts.bpm || 120;
     var mmb = opts.mmPerBeat || PHYS.mmPerBeat;
-    // 换挡键孔允许的最早列（可落在头部留白内，但不越过纸带头 2mm）——按本曲 mmPerBeat 折算。
+    // 换挡键孔允许的最早列（可落在头部留白内，孔缘距纸带头 ≥ edgeMargin）——按本曲 mmPerBeat 折算。
     // 排别：row0（主旋律）孔 y 含 +105mm 站间距，可比 row1（和弦）再前 105mm，快曲升挡不再钳制
-    var minShiftCol = Math.ceil((2 - PHYS.leadInMM - (row === 0 ? PHYS.stationGapMM : 0)) / mmb * PPB);
+    var headMin = PHYS.edgeMarginMM + PHYS.holeRadiusMM; // 孔心距带头的最小值（1.5+1.25 = 2.75）
+    var minShiftCol = Math.ceil((headMin - PHYS.leadInMM - (row === 0 ? PHYS.stationGapMM : 0)) / mmb * PPB);
     function tTime(b) { return tm ? tm.beatToTime(b) : b * 60 / bpm0; }
     // 换挡键排产（物理约束）：
     //  1) 键盘须在目标音触发前到位：触发 + shiftMs(400ms) ≤ 目标触发；优先留 shiftLeadMs(600ms) 余量
@@ -419,7 +421,7 @@
           var col = Math.max(0, Math.round(list[i].tick / tpb0 * PPB));
           if (first === null || col < first.col) first = { col: col, tick: list[i].tick, midi: list[i].note };
         }
-        var minShiftCol = Math.ceil((2 - PHYS.leadInMM - (r === 0 ? PHYS.stationGapMM : 0)) / mmPerBeat * PPB);
+        var minShiftCol = Math.ceil((PHYS.edgeMarginMM + PHYS.holeRadiusMM - PHYS.leadInMM - (r === 0 ? PHYS.stationGapMM : 0)) / mmPerBeat * PPB);
         var secPerCol = 60 / V / PPB;
         var vMM = mmPerBeat * V / 60;
         var sCols = Math.max(1, Math.ceil(Math.max(PHYS.shiftMs / 1000, PHYS.minGapMM / vMM) / secPerCol));
@@ -546,16 +548,16 @@
       result.sort(function (a, b) { return a.col - b.col || a.row - b.row || a.lane - b.lane; });
 
       // 5c. 孔缘间距守卫（规格 ≥2mm ⟺ 任意两孔孔心 ≥ 4.5mm）。
-      // 几何上唯一可能违规的跨排对 = 本排换挡孔 vs 对排端键孔
-      // （◀◀ 对 lane1、▶▶ 对 lane13，Δx = shiftGap + w/2 − D ≈ 2.39mm < 4.5）；
-      // 其余跨排孔对 Δx ≥ D ≈ 5.09mm ✓、同排 ≥ 槽栅距 ✓。
-      // 冲突时把换挡孔 ±1~3 列微移：不跨过同排音符孔、与同排换挡孔保持纸距与
-      // 400ms 按压间隔、到位不晚于其所服务的音符（serveCol）；移不动计入报告。
+      // 130mm 档宽 + shiftGap=4.4 下，唯一曾可能违规的跨排对（本排换挡孔 vs
+      // 对排端键孔）孔心距 ≈ 4.78mm ≥ 4.5，纯 x 几何已全达标——本守卫保留为
+      // 休眠安全网（手动编辑/未来改参时兜底）：若出现 <4.5mm 的该类孔对，
+      // 把换挡孔 ±1~3 列微移（不跨过同排音符孔、保持纸距与 400ms 按压间隔、
+      // 到位不晚于 serveCol），移不动计入报告。
       function spacingGuard(list) {
         var exc = 0;
         var msc = [
-          Math.ceil((2 - PHYS.leadInMM - PHYS.stationGapMM) / mmPerBeat * PPB),
-          Math.ceil((2 - PHYS.leadInMM) / mmPerBeat * PPB)
+          Math.ceil((PHYS.edgeMarginMM + PHYS.holeRadiusMM - PHYS.leadInMM - PHYS.stationGapMM) / mmPerBeat * PPB),
+          Math.ceil((PHYS.edgeMarginMM + PHYS.holeRadiusMM - PHYS.leadInMM) / mmPerBeat * PPB)
         ];
         function tT(c) { return runOpts.tempoMap ? runOpts.tempoMap.beatToTime((c + 0.5) / PPB) : (c + 0.5) / PPB * 60 / (opts.bpm || 120); }
         var round = 0, moved = true;

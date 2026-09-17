@@ -15,7 +15,7 @@
 <h1>纸带钢琴工坊 · 自测页（N=7 虚拟黑键槽位模型）</h1>
 <div id="out"></div>
 <div id="summary"></div>
-<script src="js/pp-tape.js?v=14.1"></script>
+<script src="js/pp-tape.js?v=15"></script>
 <script src="js/punch-sender.js?v=2"></script>
 <script>
 (function () {
@@ -100,33 +100,33 @@
   eq('首按数 C4 → 3', K.firstPressCount(60), 3);
   eq('首按数 C5 → 4', K.firstPressCount(72), 4);
 
-  // ---- 3. 轨位几何（孔缘 ≥2mm ⟺ 孔心 ≥4.5mm）----
+  // ---- 3. 轨位几何（孔缘 ≥2mm ⟺ 孔心 ≥4.5mm；孔缘距边 ≥1.5mm）----
   var B0 = PHYS.bandX0MM, W = PHYS.whiteKeyMM, P = PHYS.slotPitchMM, D = PHYS.rowOffsetMM;
-  near('白键宽 10.9529（=133×7/85）', W, 931 / 85);
-  near('黑键宽 9.3882（=6w/7）', PHYS.blackKeyMM, 931 * 6 / (85 * 7));
-  near('槽栅距 10.1706（=13w/14）', P, 12103 / 1190);
-  near('D = 半槽栅 5.0853', D, 12103 / 2380);
-  near('上排 ◀◀ x = B0−2（档位宽外）', K.laneXMM(1, 0), B0 - 2);
+  near('白键宽 10.7059（=130×7/85）', W, 910 / 85);
+  near('黑键宽 9.1765（=6w/7）', PHYS.blackKeyMM, 910 * 6 / (85 * 7));
+  near('槽栅距 9.9412（=13w/14）', P, 13 * 910 / (85 * 14));
+  near('D = 半槽栅 4.9706', D, 13 * 910 / (85 * 28));
+  near('上排 ◀◀ x = B0−4.4（档位宽外）', K.laneXMM(1, 0), B0 - 4.4);
   near('上排 lane1 x = B0+w/2', K.laneXMM(1, 1), B0 + W / 2);
   near('下排 lane1 x（+D 右移）', K.laneXMM(0, 1), B0 + W / 2 + D);
-  near('上排 ▶▶ x = B0+135', K.laneXMM(1, 14), B0 + 135);
-  near('下排 ▶▶ x = B0+135+D', K.laneXMM(0, 14), B0 + 135 + D);
-  ok('最左孔缘距带边 ≥2mm', K.laneXMM(1, 0) - 1.25 >= 2);
-  ok('最右孔缘距带边 ≥2mm', 150 - (K.laneXMM(0, 14) + 1.25) >= 2);
+  near('上排 ▶▶ x = B0+134.4', K.laneXMM(1, 14), B0 + 134.4);
+  near('下排 ▶▶ x = B0+134.4+D', K.laneXMM(0, 14), B0 + 134.4 + D);
+  ok('最左孔缘距带边 ≥1.5mm', K.laneXMM(1, 0) - 1.25 >= 1.5);
+  ok('最右孔缘距带边 ≥1.5mm', 150 - (K.laneXMM(0, 14) + 1.25) >= 1.5);
   var sameRowOk = true;
   for (var l = 1; l < 13; l++) { if (Math.abs(K.laneXMM(1, l + 1) - K.laneXMM(1, l) - P) > 1e-9) { sameRowOk = false; break; } }
-  ok('同排相邻键孔心距 = 槽栅距 10.17 ≥ 4.5', sameRowOk && P >= 4.5);
+  ok('同排相邻键孔心距 = 槽栅距 9.94 ≥ 4.5', sameRowOk && P >= 4.5);
   var crossKeyMin = Infinity;
   for (var lu = 1; lu <= 13; lu++) for (var ll = 1; ll <= 13; ll++) {
     var dk = Math.abs(K.laneXMM(1, lu) - K.laneXMM(0, ll));
     if (dk < crossKeyMin) crossKeyMin = dk;
   }
   ok('跨排键孔最小孔心距 = D ≥ 4.5（实际 ' + crossKeyMin.toFixed(4) + '）', Math.abs(crossKeyMin - D) < 1e-9);
-  near('换挡孔 vs 对排端键孔 = 2.391（守卫处理的对）', Math.abs(K.laneXMM(0, 0) - K.laneXMM(1, 1)), W / 2 + PHYS.shiftGapMM - D);
+  near('换挡孔 vs 对排端键孔 = 4.782（≥4.5 全规格达标）', Math.abs(K.laneXMM(0, 0) - K.laneXMM(1, 1)), W / 2 + PHYS.shiftGapMM - D);
   near('孔 y：和弦 col0 = 15', K.holeYMM(0, 1, 5, 9), 15);
-  near('孔 y：换挡孔含 +5mm 滚轮错位', K.holeYMM(0, 1, 0, 9), 20);
+  near('孔 y：换挡孔无 y 错开', K.holeYMM(0, 1, 0, 9), 15);
   near('孔 y：主旋律 col0（+105 站间）', K.holeYMM(0, 0, 5, 9), 120);
-  near('孔 y：主旋律换挡孔 = 125', K.holeYMM(0, 0, 14, 9), 125);
+  near('孔 y：主旋律换挡孔 = 120', K.holeYMM(0, 0, 14, 9), 120);
   near('孔 y：和弦 col4 = 24', K.holeYMM(4, 1, 5, 9), 24);
   near('带长 endCol=33', K.tapeLenMM(33), 15 + 33 / 4 * 9 + 105 + 15);
 
@@ -375,7 +375,7 @@
   var pt4 = PS.buildTask([{ col: 0, row: 0, lane: 14 }, { col: 0, row: 0, lane: 0 }], 9);
   eq('打孔：含换挡键孔 lane0/14（y 升序）', pt4.map(function (t) { return t.y; }).join(','), K.laneXMM(0, 0) + ',' + K.laneXMM(0, 14));
   var pt5 = PS.buildTask([{ col: -5, row: 1, lane: 0 }], 9);
-  near('打孔：归位孔负列 x=8.75（含 5mm 滚轮错位）', pt5[0].x, 8.75);
+  near('打孔：归位孔负列 x=3.75（头部留白内）', pt5[0].x, 3.75);
   eq('打孔：归位孔 y = 上排 ◀◀ 轨', pt5[0].y, K.laneXMM(1, 0));
   eq('打孔：P 命令行格式', PS.formatPunch({ x: 15, y: 25 }), 'P 15.00 25.00');
   var est = PS.estimate([{ x: 15, y: 25 }, { x: 15, y: 45 }], 10);
