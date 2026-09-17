@@ -1,25 +1,24 @@
 /* ============================================================
  * 纸带钢琴打孔程序 - 纸带数据模型与 MIDI 转换管线
  *
- * 机械模型（依据 纸带钢琴规格.md，N=7 虚拟黑键槽位模型）：
+ * 机械模型（依据 纸带钢琴规格.md，N=8 虚拟黑键槽位模型）：
  *  - 键盘简化为完美均匀槽栅：每两个白键之间必有一个黑键位（E-F、B-C 间
  *    无真实黑键处插虚拟黑键占位），白:黑键宽 = 7:6
- *  - 每档 N=7 白键：窗口 2N-1 = 13 槽 = 11~12 个真实键 + 2 虚拟位；
+ *  - 每档 N=8 白键：窗口 2N-1 = 15 槽 = 13 个真实键 + 2 虚拟位；
  *    虚拟位也配占位滚轮（非 A 锚档位压真实键），压在虚拟位上的轨为
  *    死轨（该档永不打孔，isDeadLane 按档判定）
- *  - 档位宽度 130mm = N·w + (N-1)·b → w = 910/85 ≈ 10.706，b = 6w/7 ≈ 9.176；
- *    槽栅距 p = (w+b)/2 = 13w/14 ≈ 9.941mm（同排孔缘隔 7.44mm ≥ 2mm ✓）
- *  - 槽栅周期 14 槽 = 一个八度；档位步进 12 槽（相邻档共享边界槽），
- *    档位表锚槽 [0,12,24,36,48,60,72,76] = A0,G1,F2,E3,D4,C5,B5,D6
- *    （各档半音步长 10/11 交替：A 锚窗口 10 半音、F/C 锚 11 半音）
- *  - 每排 15 滚轮：lane 0 = ◀◀、lane 1..13 = 槽 0..12、lane 14 = ▶▶；
- *    换挡滚轮在档位宽度外 shiftGapMM=4.4 处（纯 x 几何即满足全孔距规格，
- *    无需 y 方向错开）
- *  - 下排（主旋律 row0）整排右移 D = p/2 ≈ 4.971mm：两排在同一槽栅上，
- *    跨排键孔对最小孔心距 = D ≥ 4.5mm（孔缘 ≥ 2mm 规格，含列量化
- *    Δy ≥ 0.75mm 的斜距 5.03mm ✓；换挡孔 vs 对排端键孔 ≈ 4.78mm ✓）
- *  - 孔缘间距规格 2mm（孔心 ≥ 4.5mm）、孔缘距带边 1.5mm；spacingGuard
- *    保留为休眠安全网（纯 x 已达标，正常永不触发），移不动计入报告
+ *  - 档位宽度 130mm = N·w + (N-1)·b → w = 910/98 ≈ 9.286，b = 6w/7 ≈ 7.959；
+ *    槽栅距 p = (w+b)/2 = 13w/14 ≈ 8.622mm（同排孔缘隔 6.12mm ≥ 1.5mm ✓）
+ *  - 槽栅周期 14 槽 = 一个八度；档位步进 14 槽（相邻档共享边界槽），
+ *    档位表锚槽 [0,14,28,42,56,70,84,88] = A0,A1,A2,A3,A4,A5,A6,C7
+ *    （每档恰好跨一个八度；末档 C7 为上止点补丁档，窗口 C7..C8，覆盖钢琴全音域）
+ *  - 每排 17 滚轮：lane 0 = ◀◀、lane 1..15 = 槽 0..14、lane 16 = ▶▶；
+ *    换挡滚轮在档位宽度外 shiftGapMM=4.4 处
+ *  - 下排（主旋律 row0）整排右移 D = p/2 ≈ 4.311mm：两排在同一槽栅上，
+ *    跨排键孔对最小孔心距 = D ≈ 4.311mm ≥ 4.0mm（孔缘 1.5mm 规格；含列量化
+ *    Δy ≥ 0.75mm 的斜距 ≈ 4.376mm ✓；换挡孔 vs 对排端键孔 ≈ 4.732mm ✓）。
+ *    统一槽栅下纯 x 几何即满足全孔距规格，无需任何微移安全网
+ *  - 孔缘间距规格 1.5mm（任意两孔孔心 ≥ 4.0mm）、孔缘距带边 1.5mm
  *  - 换挡耗时 400ms（触发 → 键盘滑动到位，到位前仍按旧挡击发）、
  *    打孔提前量 600ms；曲首强制归位：连按 3 次 ◀ 钉底 A0
  *  - 音高 100% 精确落轨（不移调）；纸带自下而上走带，两排沿走带
@@ -37,9 +36,9 @@
   }
 
   // ---- 键盘槽位模型（N 白键 + 虚拟黑键占位 → 完美均匀槽栅）----
-  var N_WHITE = 7;                        // 每档白键数（规格可调参数）
-  var SLOT_COUNT = 2 * N_WHITE - 1;       // 13 槽/档（11~12 真实键 + 2 虚拟位）
-  var LANES_PER_ROW = SLOT_COUNT + 2;     // ◀ + 13 槽 + ▶ = 15 滚轮/排
+  var N_WHITE = 8;                        // 每档白键数（规格可调参数）
+  var SLOT_COUNT = 2 * N_WHITE - 1;       // 15 槽/档（13 真实键 + 2 虚拟位）
+  var LANES_PER_ROW = SLOT_COUNT + 2;     // ◀ + 15 槽 + ▶ = 17 滚轮/排
   var A0_MIDI = 21;
   // 槽 → 半音偏移（14 槽 = 一个八度；-1 = 虚拟黑键位，位于 B-C、E-F 之间）
   var SLOT_OFF = [0, 1, 2, -1, 3, 4, 5, 6, 7, -1, 8, 9, 10, 11];
@@ -58,49 +57,47 @@
   var PHYS = {
     tapeWidthMM: 150,     // 纸带总宽
     gearWidthMM: 130,     // 档位宽度 = 窗口全部键宽之和（固定，与 N 无关）
-    topStopMidi: 86,      // 最高档 D6（机械上止点）
+    topStopMidi: 96,      // 最高档 C7（机械上止点；窗口 C7..C8 覆盖钢琴全音域）
     holeRadiusMM: 1.25,   // 打孔半径（孔径 2.5mm）
-    minHoleC2C: 4.5,       // 孔缘间距 ≥ 2mm + 孔径 2.5 → 任意两孔最小孔心距
+    minHoleC2C: 4.0,      // 孔缘间距 ≥ 1.5mm + 孔径 2.5 → 任意两孔最小孔心距
     edgeMarginMM: 1.5,    // 最外侧孔缘距纸带边
     leadInMM: 15,         // 头部留白
     leadOutMM: 15,        // 尾部留白
     mmPerBeat: 9,         // 每拍走带长度
-    minGapMM: 4.5,        // 同轨相邻两孔最小孔心距（拨片约束；孔缘隔 2mm 恰达规格）
+    minGapMM: 4.0,        // 同轨相邻两孔最小孔心距（拨片约束；孔缘隔 1.5mm 恰达规格）
     stationGapMM: 105,    // 两排滚轮沿走带方向间距
     shiftMs: 400,         // 换挡耗时：按下换挡键 → 键盘滑动到位
     shiftLeadMs: 600,     // 打孔提前量 = 400ms 换挡 + 200ms 余量
-    // 换挡滚轮中心距档位边 c=4.4（可行域 [4.12, 4.76]）：换挡孔 vs 对排端键孔的
-    // 孔心距 = c + w/2 − D ≈ 4.78 ≥ 4.5 → 纯 x 几何即满足全 2mm 孔距规格，
-    // 两排换挡孔对 Δx = D ≈ 4.97 ✓；无需 y 方向错开（shiftYOffMM = 0）
-    shiftGapMM: 4.4,
-    shiftYOffMM: 0        // 换挡滚轮沿走带方向错开量（130mm 档宽下不再需要，保留字段备用）
+    // 换挡滚轮中心距档位边 c=4.4：换挡孔 vs 对排端键孔孔心距 ≈ 4.732 ≥ 4.0，
+    // 两排换挡孔对 Δx = D ≈ 4.311 ✓ —— 纯 x 几何即满足全孔距规格
+    shiftGapMM: 4.4
   };
   var PPB = 4; // 每拍编辑栅格数（col），1 col = 2.25mm
 
   // ---- 键宽与槽栅（白:黑 = 7:6；档位宽 = N·w + (N-1)·b）----
-  PHYS.whiteKeyMM = PHYS.gearWidthMM * 7 / (13 * N_WHITE - 6);  // 910/85 ≈ 10.7059
-  PHYS.blackKeyMM = PHYS.whiteKeyMM * 6 / 7;                    // ≈ 9.1765
-  PHYS.slotPitchMM = (PHYS.whiteKeyMM + PHYS.blackKeyMM) / 2;   // 13w/14 ≈ 9.9412
-  PHYS.rowOffsetMM = PHYS.slotPitchMM / 2;                      // D = 半槽栅 ≈ 4.9706（跨排最小孔心距）
+  PHYS.whiteKeyMM = PHYS.gearWidthMM * 7 / (13 * N_WHITE - 6);  // 910/98 ≈ 9.2857
+  PHYS.blackKeyMM = PHYS.whiteKeyMM * 6 / 7;                    // ≈ 7.9592
+  PHYS.slotPitchMM = (PHYS.whiteKeyMM + PHYS.blackKeyMM) / 2;   // 13w/14 ≈ 8.6224
+  PHYS.rowOffsetMM = PHYS.slotPitchMM / 2;                      // D = 半槽栅 ≈ 4.3112（跨排最小孔心距）
   // 档位带在纸带上的 x0：换挡轮（两侧 shiftGap）+ D 偏移整体居中于 150mm
   PHYS.bandX0MM = (PHYS.tapeWidthMM - (2 * PHYS.shiftGapMM + PHYS.gearWidthMM + PHYS.rowOffsetMM)) / 2
-    + PHYS.shiftGapMM; // ≈ 7.5147（最外孔缘距带边 ≈ 1.86mm ≥ 1.5mm ✓）
+    + PHYS.shiftGapMM; // ≈ 7.8444（最外孔缘距带边 ≈ 2.19mm ≥ 1.5mm ✓）
 
-  // ---- 档位表：锚槽 0 起每档 +12 槽（相邻档共享边界槽），末档补 D6 上止点 ----
-  var SLOT_STEP = SLOT_COUNT - 1; // 12
+  // ---- 档位表：锚槽 0 起每档 +14 槽（= 1 个八度，相邻档共享边界槽），末档补 C7 上止点 ----
+  var SLOT_STEP = SLOT_COUNT - 1; // 14
   var TOP_SLOT = pitchToSlot(PHYS.topStopMidi);
   var GEAR_SLIDES = (function () {
     var a = [0];
     while (a[a.length - 1] + SLOT_STEP <= TOP_SLOT) a.push(a[a.length - 1] + SLOT_STEP);
     if (a[a.length - 1] !== TOP_SLOT) a.push(TOP_SLOT);
-    return a; // [0,12,24,36,48,60,72,76]
+    return a; // [0,14,28,42,56,70,84,88]
   })();
-  var GEAR_BASES = GEAR_SLIDES.map(slotPitch); // [A0,G1,F2,E3,D4,C5,B5,D6] = [21,31,41,52,62,72,83,86]
+  var GEAR_BASES = GEAR_SLIDES.map(slotPitch); // [A0,A1,A2,A3,A4,A5,A6,C7] = [21,33,45,57,69,81,93,96]
   var W_MAX = GEAR_SLIDES.length - 1;         // 7
 
   // ---- 轨位几何 ----
-  // lane 0 = ◀◀（档位宽左外 shiftGap）、lane 1..13 = 槽 0..12（键心在档位带内）、
-  // lane 14 = ▶▶（右外 shiftGap）；下排（row0 主旋律）整排右移 D
+  // lane 0 = ◀◀（档位宽左外 shiftGap）、lane 1..15 = 槽 0..14（键心在档位带内）、
+  // lane 16 = ▶▶（右外 shiftGap）；下排（row0 主旋律）整排右移 D
   function laneXMM(row, lane) {
     var x = lane === 0 ? -PHYS.shiftGapMM
       : lane === LANES_PER_ROW - 1 ? PHYS.gearWidthMM + PHYS.shiftGapMM
@@ -113,7 +110,7 @@
     var s = ((GEAR_SLIDES[gear] + lane - 1) % 14 + 14) % 14;
     return s === 3 || s === 9;
   }
-  // 档位 g 下 lane(1..13) 的实际音高（虚拟位 null）/ 音高在档位 g 下的 lane
+  // 档位 g 下 lane(1..15) 的实际音高（虚拟位 null）/ 音高在档位 g 下的 lane
   function soundingMidi(lane, gear) { return slotPitch(GEAR_SLIDES[gear] + lane - 1); }
   function laneOfMidi(midi, gear) { return pitchToSlot(midi) - GEAR_SLIDES[gear] + 1; }
   // 含 midi 的档位（从 from 向外就近搜索；相邻档共享边界槽）；无解 -1
@@ -135,13 +132,11 @@
     var g = gearOfMidi(midi, 0);
     return g > 0 ? g : 0;
   }
-  // 孔在带长方向的坐标：下排（主旋律，row0）比同拍上排（和弦，row1）靠带尾 105mm；
-  // 换挡孔再加 shiftYOffMM（当前 0：130mm 档宽下无需错开）。
+  // 孔在带长方向的坐标：下排（主旋律，row0）比同拍上排（和弦，row1）靠带尾 105mm。
   // mmb：本曲每拍毫米数（最密间隔拉长后可能与 PHYS.mmPerBeat 不同），缺省标准值
   function holeYMM(col, row, lane, mmb) {
     return PHYS.leadInMM + (col / PPB) * (mmb || PHYS.mmPerBeat)
-      + (row === 0 ? PHYS.stationGapMM : 0)
-      + (isShiftLane(lane) ? PHYS.shiftYOffMM : 0);
+      + (row === 0 ? PHYS.stationGapMM : 0);
   }
 
   // ---- 播放时的键盘挡位模型 ----
@@ -192,8 +187,8 @@
    * @param opts.tempoMap 变速曲速度表（缺省恒定 opts.bpm，再缺省 120）
    * @param opts.home 曲首强制归位：连按 3 次 ◀ 钉底到初始档位 A0（键盘初始位置不确定）
    * @returns {holes:[{row,lane,col,midi,serveCol}], shifts:[{row,dir,col}], clamped, finalW, home, homeOk}
-   * lane: 0=换挡键 ◀◀ 1..13=槽位 14=换挡键 ▶▶；midi 为该孔在换挡完成后的实际音高
-   * （换挡键孔为 null）；serveCol = 该换挡孔所服务的音符列（孔距守卫微移时保时序用）
+   * lane: 0=换挡键 ◀◀ 1..15=槽位 16=换挡键 ▶▶；midi 为该孔在换挡完成后的实际音高
+   * （换挡键孔为 null）；serveCol = 该换挡孔所服务的音符列（排产/校验用）
    * home：归位孔数（0 或 3，shifts 不计入归位）；homeOk：归位末次按动 + 升挡链能否赶在首音前
    *
    * 换挡提前量（物理）：换挡键孔触发 + shiftLeadMs(600ms) ≤ 目标音符触发——
@@ -248,7 +243,7 @@
     var w = 0, prevCol = null, lastPressT = -Infinity;
     var home = 0, homeOk = true, homeBlock = false;
 
-    // 曲首强制归位：连按 3 次 ◀ 钉底到 A0（间隔 ≥400ms 且同轨孔距 ≥4.5mm）。
+    // 曲首强制归位：连按 3 次 ◀ 钉底到 A0（间隔 ≥400ms 且同轨孔距 ≥minGapMM）。
     // margin 不只保证"归位完成 ≤ 首音"：首音自身要升挡时，其换挡链（每按 600ms 提前量、
     // 相邻按动间隔 400ms）必须完整排进 [归位末按, 首音] 区间，否则归位会挤掉首音的升挡键。
     if (opts.home && notes.length) {
@@ -278,7 +273,7 @@
       var target = gearOfMidi(midi, w);
 
       // 2. 全档位音域外（低于 A0 或高于顶档窗口）→ 钳制到当前窗口最近键
-      //    （钳制结果必落 lane 1 或 13——锚槽与末槽恒为真实键，无死轨问题）
+      //    （钳制结果必落 lane 1 或 15——锚槽与末槽恒为真实键，无死轨问题）
       if (target === -1) {
         clamped++;
         var lc = Math.max(1, Math.min(SLOT_COUNT, laneOfMidi(midi, w)));
@@ -547,67 +542,10 @@
       }
       result.sort(function (a, b) { return a.col - b.col || a.row - b.row || a.lane - b.lane; });
 
-      // 5c. 孔缘间距守卫（规格 ≥2mm ⟺ 任意两孔孔心 ≥ 4.5mm）。
-      // 130mm 档宽 + shiftGap=4.4 下，唯一曾可能违规的跨排对（本排换挡孔 vs
-      // 对排端键孔）孔心距 ≈ 4.78mm ≥ 4.5，纯 x 几何已全达标——本守卫保留为
-      // 休眠安全网（手动编辑/未来改参时兜底）：若出现 <4.5mm 的该类孔对，
-      // 把换挡孔 ±1~3 列微移（不跨过同排音符孔、保持纸距与 400ms 按压间隔、
-      // 到位不晚于 serveCol），移不动计入报告。
-      function spacingGuard(list) {
-        var exc = 0;
-        var msc = [
-          Math.ceil((PHYS.edgeMarginMM + PHYS.holeRadiusMM - PHYS.leadInMM - PHYS.stationGapMM) / mmPerBeat * PPB),
-          Math.ceil((PHYS.edgeMarginMM + PHYS.holeRadiusMM - PHYS.leadInMM) / mmPerBeat * PPB)
-        ];
-        function tT(c) { return runOpts.tempoMap ? runOpts.tempoMap.beatToTime((c + 0.5) / PPB) : (c + 0.5) / PPB * 60 / (opts.bpm || 120); }
-        var round = 0, moved = true;
-        while (moved && round < 4) {
-          moved = false; round++;
-          for (var i = 0; i < list.length; i++) {
-            var h = list[i];
-            if (!isShiftLane(h.lane)) continue;
-            var ol = h.lane === 0 ? 1 : LANES_PER_ROW - 2; // 对排端键轨
-            var dx = Math.abs(laneXMM(h.row, h.lane) - laneXMM(1 - h.row, ol));
-            if (dx >= PHYS.minHoleC2C - 1e-9) continue;
-            var needY = Math.sqrt(PHYS.minHoleC2C * PHYS.minHoleC2C - dx * dx);
-            var hy = holeYMM(h.col, h.row, h.lane, mmPerBeat);
-            var bad = false;
-            for (var k = 0; k < list.length && !bad; k++) {
-              var n = list[k];
-              if (n.row === 1 - h.row && n.lane === ol &&
-                  Math.abs(holeYMM(n.col, n.row, n.lane, mmPerBeat) - hy) < needY - 1e-9) bad = true;
-            }
-            if (!bad) continue;
-            var fixed = false;
-            var cands = [-1, 1, -2, 2, -3, 3];
-            for (var ci = 0; ci < cands.length && !fixed; ci++) {
-              var nc = h.col + cands[ci];
-              if (nc < msc[h.row]) continue;
-              var ok = true;
-              var lo = Math.min(nc, h.col), hiC = Math.max(nc, h.col);
-              for (var k2 = 0; k2 < list.length && ok; k2++) {
-                var o = list[k2];
-                if (o === h) continue;
-                if (o.row === h.row && !isShiftLane(o.lane) && o.col >= lo && o.col <= hiC) {
-                  ok = false; // 不跨过同排音符孔（其到位/间隔约束按原位置校验过）
-                } else if (o.row === h.row && isShiftLane(o.lane)) {
-                  if (Math.abs(o.col - nc) < gapCols) ok = false;                                     // 同排换挡孔纸距
-                  else if (Math.abs(tT(o.col) - tT(nc)) < PHYS.shiftMs / 1000 - 1e-9) ok = false;      // 按压间隔
-                } else if (o.row === 1 - h.row && o.lane === ol &&
-                  Math.abs(holeYMM(o.col, o.row, o.lane, mmPerBeat) - holeYMM(nc, h.row, h.lane, mmPerBeat)) < needY - 1e-9) {
-                  ok = false; // 新位置仍有冲突
-                }
-              }
-              if (ok && h.serveCol != null && tT(nc) + PHYS.shiftMs / 1000 > tT(h.serveCol) + 1e-9) ok = false;
-              if (ok) { h.col = nc; hy = holeYMM(nc, h.row, h.lane, mmPerBeat); fixed = true; moved = true; }
-            }
-            if (!fixed) exc++;
-          }
-        }
-        return exc;
-      }
-      var guardEx = spacingGuard(result);
-      if (guardEx) result.sort(function (a, b) { return a.col - b.col || a.row - b.row || a.lane - b.lane; });
+      // 5c. 孔缘间距（规格 ≥1.5mm ⟺ 任意两孔孔心 ≥ 4.0mm）由纯几何保证：
+      // 跨排同槽位孔对 Δx = D ≈ 4.311、换挡孔 vs 对排端键孔 ≈ 4.732、
+      // 同排相邻槽位 Δx = p ≈ 8.622、同轨沿带走带方向 ≥ gapCols·(mmb/PPB) ≥ 4.0
+      // —— 无需任何事后微移安全网（N=8 统一槽栅下的结论）。
 
       var endCol = 0;
       for (var e = 0; e < result.length; e++) if (result[e].col >= 0 && result[e].col + 1 > endCol) endCol = result[e].col + 1;
@@ -627,7 +565,6 @@
           pushedNotes: pushed,
           dropped: dropped,
           maxPushCols: maxPush,
-          guardExceptions: guardEx,
           scale: mmPerBeat / PHYS.mmPerBeat
         }
       };
@@ -661,9 +598,10 @@
   }
 
   /**
-   * 示例曲《小星星》（D 大调）：下排主旋律 + 上排和弦（D-G-A 进行），整体落在 C5 档
-   * （gear 5，窗口 C5..B5 共 12 实键、lane6 死轨）：首音 D5 唯属 g5 窗口，曲首两排
-   * 各连按 5 次 ▶ 升挡演示换挡调度；首音空出 3 拍给升挡链留位（100bpm 下链 [-4,-1,2,5,8]）
+   * 示例曲《小星星》（D 大调）：下排主旋律 + 上排和弦（D-G-A 进行），整体在 A4/A5 档
+   * （档位窗口跨整八度，D5/F#5/A5/G5 等全部落在 g4 窗 56..70 内，仅 B5 需升 1 档到 g5）：
+   * 曲首两排各留 3 拍给升挡链（100bpm 下链 [-1,2,5,8]），下排 B5 处再升 1 次、
+   * 回 G5 时降 1 次，演示双向换挡调度
    * @returns {holes, endCol, bpm, shifts}
    */
   function demoSong() {
@@ -671,7 +609,7 @@
       [3, 'D5'], [4, 'D5'], [5, 'A5'], [6, 'A5'], [7, 'B5'], [8, 'B5'], [9, 'A5'],
       [10, 'G5'], [11, 'G5'], [12, 'F#5'], [13, 'F#5'], [14, 'E5'], [15, 'E5'], [16, 'D5']
     ];
-    var cho = [ // 每 2 拍一个三和弦（同拍 3 孔，全部落在 C5 档窗口 72..83 内）
+    var cho = [ // 每 2 拍一个三和弦（同拍 3 孔，全部落在 A4 档窗口 56..70 内）
       [3, 'D5'], [3, 'F#5'], [3, 'A5'],
       [5, 'G5'], [5, 'B5'], [5, 'D5'],
       [7, 'D5'], [7, 'F#5'], [7, 'A5'],

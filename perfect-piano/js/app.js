@@ -18,7 +18,7 @@
 
   // ---------------- 状态 ----------------
   var state = {
-    holes: [],            // {col,row,lane,midi}，按 col/row/lane 升序；lane 0/14 为换挡键孔
+    holes: [],            // {col,row,lane,midi}，按 col/row/lane 升序；lane 0/16 为换挡键孔
     endCol: 0,
     midi: null,
     bpm: 100,
@@ -45,7 +45,7 @@
   function stationPx() { return PHYS.stationGapMM * pxPerMM(); }
   function leadOutPx() { return PHYS.leadOutMM * pxPerMM(); }
   function tapeWpx() { return PHYS.tapeWidthMM * pxPerMM(); }
-  // 两排滚轮轨位（各排 15 个滚轮 x；下排右移 D = 半槽栅与上排交错，无重合）
+  // 两排滚轮轨位（各排 17 个滚轮 x；下排右移 D = 半槽栅与上排交错，无重合）
   function rollerXs() {
     var a = [];
     for (var l = 0; l < LANES; l++) a.push(PP.laneXMM(1, l));
@@ -423,7 +423,7 @@
         if (cx < -10 || cx > vw + 10) continue;
         var txt = k2 === 0 ? '◀' : k2 === LANES - 1 ? '▶▶' :
           (PP.isDeadLane(k2, sh) ? '·' : PP.midiName(PP.soundingMidi(k2, sh)));
-        // 到界方向的换挡键当前不可再按 → 变暗（底界 A0=0 档 / 顶界 D6=W_MAX 档）；
+        // 到界方向的换挡键当前不可再按 → 变暗（底界 A0=0 档 / 顶界 C7=W_MAX 档）；
         // 死轨（压在虚拟黑键位上）灰点；换挡滑动中白键名灰显；已换挡键名金色
         var atBoundDown = k2 === 0 && sh <= 0, atBoundUp = k2 === LANES - 1 && sh >= PP.W_MAX;
         if (atBoundDown || atBoundUp) ctx2d.fillStyle = '#555f6b';
@@ -438,8 +438,8 @@
     ctx2d.font = '9px sans-serif';
     ctx2d.textAlign = 'left';
     if (left - sx > state.rulerW + 92) {
-      ctx2d.fillText(rowInfo[1].moving ? '和弦·换挡中' + (rowInfo[1].dir > 0 ? ' ▶▶' : ' ◀◀') : '上排·和弦·' + PP.gearName(rowInfo[1].s), rulerLeft - sx + 2, gh - 24);
-      ctx2d.fillText(rowInfo[0].moving ? '主旋律·换挡中' + (rowInfo[0].dir > 0 ? ' ▶▶' : ' ◀◀') : '下排·主旋律·' + PP.gearName(rowInfo[0].s), rulerLeft - sx + 2, gh - 7);
+      ctx2d.fillText(rowInfo[1].moving ? '和弦' + (rowInfo[1].dir > 0 ? ' ▶▶' : ' ◀◀') : '上排·和弦·' + PP.gearName(rowInfo[1].s), rulerLeft - sx + 2, gh - 24);
+      ctx2d.fillText(rowInfo[0].moving ? '主旋律' + (rowInfo[0].dir > 0 ? ' ▶▶' : ' ◀◀') : '下排·主旋律·' + PP.gearName(rowInfo[0].s), rulerLeft - sx + 2, gh - 7);
     }
     ctx2d.textAlign = 'center';
 
@@ -478,7 +478,7 @@
     var ppm = pxPerMM(), left = tapeLeftX();
     var mmX = (x - left) / ppm;
     if (mmX < 0 || mmX > PHYS.tapeWidthMM) return null;
-    // 最近轨位（上下排 2×15 轨中就近，容差 = 半槽栅距）
+    // 最近轨位（上下排 2×17 轨中就近，容差 = 半槽栅距）
     var best = null, bestD = PHYS.slotPitchMM / 2 - 0.05;
     for (var r = 0; r < 2; r++) {
       for (var k = 0; k < LANES; k++) {
@@ -710,7 +710,6 @@
     if (r.clamped) parts.push(r.clamped + ' 音超出档位音域按就近键击发');
     if (r.pushedNotes) parts.push(r.pushedNotes + ' 音因最小孔距后移');
     if (r.dropped) parts.push(r.dropped + ' 音过密且紧邻换挡、物理打不下已舍弃');
-    if (r.guardExceptions) parts.push(r.guardExceptions + ' 个换挡孔孔距冲突未能规避（罕见）');
     setMsg('转换完成：' + r.holeCount + ' 孔' + (parts.length ? '，' + parts.join('，') : ''));
     updateSpacer(); draw(); updateStatus();
   }
@@ -988,7 +987,7 @@
     state.tempoMap = null;
     state.mmPerBeat = PHYS.mmPerBeat;
     state.report = { shifts: res.shifts, clamped: 0, pushedNotes: 0, holeCount: res.holes.length };
-    setMsg('示例曲《小星星》已载入（两排曲首各升挡 5 次到 ' + PP.gearName(5) + ' 档），可播放试听');
+    setMsg('示例曲《小星星》已载入（两排曲首各升挡 4 次到 ' + PP.gearName(4) + ' 档，下排 B5 处再升 1 次、回 G5 时降 1 次），可播放试听');
     updateSpacer(); draw(); updateStatus();
   }
 
