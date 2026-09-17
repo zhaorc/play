@@ -34,7 +34,7 @@
   function buildTask(holes, mmb) {
     var task = (holes || []).map(function (h) {
       return {
-        x: PP.holeYMM(h.col, h.row, mmb),   // 走带方向（长度）
+        x: PP.holeYMM(h.col, h.row, h.lane, mmb), // 走带方向（长度；换挡孔含 +5mm 滚轮错位）
         y: PP.laneXMM(h.row, h.lane),        // 带宽方向
         col: h.col, row: h.row, lane: h.lane
       };
