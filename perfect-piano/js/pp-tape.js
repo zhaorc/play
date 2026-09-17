@@ -240,6 +240,7 @@
       return c < minShiftCol ? null : c;
     }
     var holes = [], shifts = [], clamped = 0;
+    var rescues = []; // 换挡来不及被钳制的音（候选跨排救援：另一排可能恰在该档）
     var w = 0, prevCol = null, lastPressT = -Infinity;
     var home = 0, homeOk = true, homeBlock = false;
 
@@ -310,7 +311,8 @@
         if (presses === null) { // 物理放不下（换挡来不及），放弃换挡改钳制
           clamped++;
           var lc2 = Math.max(1, Math.min(SLOT_COUNT, laneOfMidi(midi, w)));
-          holes.push({ row: row, lane: lc2, col: col, midi: soundingMidi(lc2, w), shift: w });
+          holes.push({ row: row, lane: lc2, col: col, midi: soundingMidi(lc2, w), shift: w, clamp: true });
+          rescues.push({ col: col, midi: midi });
           prevCol = col;
           continue;
         }
@@ -327,7 +329,7 @@
       holes.push({ row: row, lane: laneOfMidi(midi, w), col: col, midi: midi, shift: w });
       prevCol = col;
     }
-    return { holes: holes, shifts: shifts, clamped: clamped, finalW: w, home: home, homeOk: homeOk && !homeBlock };
+    return { holes: holes, shifts: shifts, clamped: clamped, finalW: w, home: home, homeOk: homeOk && !homeBlock, rescues: rescues };
   }
 
   /** 整曲顺延 beats 拍（归位留时间用）：复制并平移 notes / tempos 的 tick。
@@ -469,6 +471,32 @@
       var rL = scheduleRow(melN, 0, runOpts);
       var rU = scheduleRow(choN, 1, runOpts);
 
+      // 跨排救援：本排换挡来不及被钳制的音，若另一排在同一拍恰好已停在含该音的
+      // 档位（无需为其新增换挡），移到另一排击发——两排键盘同构同音色，仅站不同。
+      // 救援不改变另一排的换挡轨迹，只借用其当前窗口；移除本排原钳制孔。
+      function rescueRow(own, other, ownRow) {
+        var n = 0;
+        if (!own.rescues || !own.rescues.length) return 0;
+        var tl = buildShiftTimeline(other.holes, runOpts.tempoMap || runOpts.bpm || 120);
+        for (var i = 0; i < own.rescues.length; i++) {
+          var rs = own.rescues[i];
+          var s = shiftAt(tl, ownRow === 0 ? 1 : 0, (rs.col + 0.5) / PPB);
+          var lane = laneOfMidi(rs.midi, s);
+          if (lane < 1 || lane > SLOT_COUNT) continue; // 另一排窗内无此音
+          var idx = -1;
+          for (var h = 0; h < own.holes.length; h++) {
+            if (own.holes[h].clamp && own.holes[h].col === rs.col) { idx = h; break; }
+          }
+          if (idx < 0) continue;
+          own.holes.splice(idx, 1);
+          own.clamped--;
+          other.holes.push({ row: ownRow === 0 ? 1 : 0, lane: lane, col: rs.col, midi: rs.midi, shift: s });
+          n++;
+        }
+        return n;
+      }
+      var rescued = rescueRow(rL, rU, 0) + rescueRow(rU, rL, 1);
+
       // 合并 + 同拍同轨去重
       var seen = {}, holes = [];
       var merged = rL.holes.concat(rU.holes);
@@ -559,6 +587,7 @@
           holeCount: result.length,
           empty: false,
           clamped: rL.clamped + rU.clamped,
+          rescued: rescued,
           shifts: [rL.shifts.length, rU.shifts.length],
           homing: [rL.home, rU.home],
           homeOk: [rL.homeOk, rU.homeOk],

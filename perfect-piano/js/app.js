@@ -708,6 +708,7 @@
     if (r.scale > 1) parts.push('按最密间隔拉长纸带 ×' + r.scale + '（节奏零失真）');
     if (r.shifts[0] || r.shifts[1]) parts.push('换挡键 主 ' + r.shifts[0] + ' / 和 ' + r.shifts[1]);
     if (r.clamped) parts.push(r.clamped + ' 音超出档位音域按就近键击发');
+    if (r.rescued) parts.push(r.rescued + ' 音本排换挡来不及、移到另一排同档击发');
     if (r.pushedNotes) parts.push(r.pushedNotes + ' 音因最小孔距后移');
     if (r.dropped) parts.push(r.dropped + ' 音过密且紧邻换挡、物理打不下已舍弃');
     setMsg('转换完成：' + r.holeCount + ' 孔' + (parts.length ? '，' + parts.join('，') : ''));

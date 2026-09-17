@@ -15,7 +15,7 @@
 <h1>纸带钢琴工坊 · 自测页（N=8 虚拟黑键槽位模型）</h1>
 <div id="out"></div>
 <div id="summary"></div>
-<script src="js/pp-tape.js?v=16"></script>
+<script src="js/pp-tape.js?v=17"></script>
 <script src="js/punch-sender.js?v=3"></script>
 <script>
 (function () {
@@ -164,6 +164,48 @@
   eq('同拍 C4+C6：换挡来不及钳制', r4.clamped, 1);
   eq('同拍 C4：仅首音升挡 3 孔', r4.shifts.length, 3);
   eq('C6 钳到 g3 窗顶 A4(69)', r4.holes[r4.holes.length - 1].midi, 69);
+
+  // ---- 4b. 跨排救援：本排换挡来不及的钳制音，移到恰在该档的另一排击发 ----
+  // 首音空出 10 拍给两排升挡链留位（home:false 无归位顺延）
+  var midiR = {
+    ticksPerBeat: 480,
+    tracks: [
+      { name: 'mel', channels: [0], notes: [
+        { tick: 4800, note: 60, channel: 0 },
+        { tick: 4800, note: 84, channel: 0 } // C6 同拍：本排从 g3 升 2 档来不及被钳制
+      ] },
+      { name: 'chd', channels: [0], notes: [
+        { tick: 4800, note: 84, channel: 0 } // 和弦排已在 g5（C6 在窗内）
+      ] }
+    ],
+    tempos: []
+  };
+  var cvR = K.convertFromMidi(midiR, { melodyTracks: new Set([0]), chordTracks: new Set([1]), home: false });
+  eq('跨排救援：C6 移排后零钳制', cvR.report.clamped, 0);
+  eq('跨排救援：rescued = 1', cvR.report.rescued, 1);
+  eq('跨排救援：主旋律排无 C6 孔', cvR.holes.filter(function (h) { return h.row === 0 && h.midi === 84; }).length, 0);
+  var r1c6 = cvR.holes.filter(function (h) { return h.row === 1 && h.midi === 84; });
+  eq('跨排救援：和弦排 C6 落 g5 lane5（救援孔与原孔去重合一）', r1c6.length + ':' + (r1c6[0] ? r1c6[0].lane : 'x'), '1:5');
+  var tlR = K.buildShiftTimeline(cvR.holes);
+  var badR = cvR.holes.filter(function (h) {
+    return !K.isShiftLane(h.lane) && K.soundingMidi(h.lane, K.shiftAt(tlR, h.row, (h.col + 0.5) / 4)) !== h.midi;
+  }).length;
+  eq('跨排救援：实时音高逐孔等于烘焙', badR, 0);
+  var midiR2 = {
+    ticksPerBeat: 480,
+    tracks: [
+      { name: 'mel', channels: [0], notes: [
+        { tick: 4800, note: 60, channel: 0 },
+        { tick: 4800, note: 84, channel: 0 }
+      ] },
+      { name: 'chd', channels: [0], notes: [
+        { tick: 4800, note: 60, channel: 0 } // 和弦排在 g3，C6 不在窗内 → 救援失败
+      ] }
+    ],
+    tempos: []
+  };
+  var cvR2 = K.convertFromMidi(midiR2, { melodyTracks: new Set([0]), chordTracks: new Set([1]), home: false });
+  eq('跨排救援：另一排窗内无此音 → 维持钳制', cvR2.report.clamped + ':' + cvR2.report.rescued, '1:0');
 
   // ---- 5. 播放挡位模型（换挡 400ms 到位；到位前按旧挡击发）----
   eq('isShiftLane(0/16)', K.isShiftLane(0) && K.isShiftLane(16) && !K.isShiftLane(15), true);
