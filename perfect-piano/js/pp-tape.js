@@ -1,26 +1,27 @@
 /* ============================================================
  * 纸带钢琴打孔程序 - 纸带数据模型与 MIDI 转换管线
  *
- * 机械模型（依据 纸带钢琴规格.md，N=8 虚拟黑键槽位模型）：
+ * 机械模型（依据 纸带钢琴规格.md，N=8 虚拟黑键槽位 + 混合换挡）：
  *  - 键盘简化为完美均匀槽栅：每两个白键之间必有一个黑键位（E-F、B-C 间
  *    无真实黑键处插虚拟黑键占位），白:黑键宽 = 7:6
  *  - 每档 N=8 白键：窗口 2N-1 = 15 槽 = 13 个真实键 + 2 虚拟位；
- *    虚拟位也配占位滚轮（非 A 锚档位压真实键），压在虚拟位上的轨为
- *    死轨（该档永不打孔，isDeadLane 按档判定）
+ *    虚拟位也配占位滚轮，压在虚拟位上的轨为死轨（按锚槽判定）
  *  - 档位宽度 130mm = N·w + (N-1)·b → w = 910/98 ≈ 9.286，b = 6w/7 ≈ 7.959；
- *    槽栅距 p = (w+b)/2 = 13w/14 ≈ 8.622mm（同排孔缘隔 6.12mm ≥ 1.5mm ✓）
- *  - 槽栅周期 14 槽 = 一个八度；档位步进 14 槽（相邻档共享边界槽），
- *    档位表锚槽 [0,14,28,42,56,70,84,88] = A0,A1,A2,A3,A4,A5,A6,C7
- *    （每档恰好跨一个八度；末档 C7 为上止点补丁档，窗口 C7..C8，覆盖钢琴全音域）
- *  - 每排 17 滚轮：lane 0 = ◀◀、lane 1..15 = 槽 0..14、lane 16 = ▶▶；
- *    换挡滚轮在档位宽度外 shiftGapMM=4.4 处
- *  - 下排（主旋律 row0）整排右移 D = p/2 ≈ 4.311mm：两排在同一槽栅上，
- *    跨排键孔对最小孔心距 = D ≈ 4.311mm ≥ 4.0mm（孔缘 1.5mm 规格；含列量化
- *    Δy ≥ 0.75mm 的斜距 ≈ 4.376mm ✓；换挡孔 vs 对排端键孔 ≈ 4.732mm ✓）。
+ *    槽栅距 p = (w+b)/2 = 13w/14 ≈ 8.622mm
+ *  - 键盘位置 = 连续锚槽 s ∈ [0, 88]（0=A0 底止点，88=C7 顶止点）：
+ *    整档键 ◀◀/▶▶ 每按 ±14 槽（= 1 个八度），400ms 到位；半音键 ±1a/±1b
+ *    每按 ±1 槽（= 1 半音），10ms 到位（视为瞬时），a/b 双轨交替 →
+ *    步进孔距 2.25mm（1 列），同轨 ≥2 列（4.5mm）
+ *  - 移动分解 Δ = 14a + b（|b| ≤ 13；允许过冲回调：如 +13 = 1 整档 − 1 半音，
+ *    仅当中间位置不出 [0,88]）
+ *  - 每排 21 滚轮（全部上统一槽栅，跨排最小孔心距 = D = p/2 ≈ 4.311 ≥ 4.0 ✓）：
+ *    lane 0=◀◀（w/2−p）、1..15=槽位（w/2+(l−1)p）、16=▶▶（w/2+15p）、
+ *    17=−1a、18=−1b（左侧外伸）、19=+1a、20=+1b（右侧外伸）
+ *  - 纸带宽 200mm（21 轨栅格总占宽 20p+D ≈ 176.8mm，两侧边距约 10mm）
+ *  - 孔缘间距规格 1.5mm（任意两孔孔心 ≥ 4.0mm）、孔缘距带边 1.5mm；
  *    统一槽栅下纯 x 几何即满足全孔距规格，无需任何微移安全网
- *  - 孔缘间距规格 1.5mm（任意两孔孔心 ≥ 4.0mm）、孔缘距带边 1.5mm
- *  - 换挡耗时 400ms（触发 → 键盘滑动到位，到位前仍按旧挡击发）、
- *    打孔提前量 600ms；曲首强制归位：连按 3 次 ◀ 钉底 A0
+ *  - 换挡物理：整档 400ms 到位（到位前仍按旧位击发）、连续按动间隔 ≥400ms；
+ *    半音 10ms 到位、可在音符前 1 列按动；曲首强制归位：连按 7 次 ◀ 钉底 A0
  *  - 音高 100% 精确落轨（不移调）；纸带自下而上走带，两排沿走带
  *    方向相距 105mm，先穿上排（和弦）再穿下排（主旋律）
  * ============================================================ */
@@ -37,8 +38,8 @@
 
   // ---- 键盘槽位模型（N 白键 + 虚拟黑键占位 → 完美均匀槽栅）----
   var N_WHITE = 8;                        // 每档白键数（规格可调参数）
-  var SLOT_COUNT = 2 * N_WHITE - 1;       // 15 槽/档（13 真实键 + 2 虚拟位）
-  var LANES_PER_ROW = SLOT_COUNT + 2;     // ◀ + 15 槽 + ▶ = 17 滚轮/排
+  var SLOT_COUNT = 2 * N_WHITE - 1;      // 15 槽/档（13 真实键 + 2 虚拟位）
+  var LANES_PER_ROW = SLOT_COUNT + 6;     // ◀ + 15 槽 + ▶ + 4 半音位 = 21 滚轮/排
   var A0_MIDI = 21;
   // 槽 → 半音偏移（14 槽 = 一个八度；-1 = 虚拟黑键位，位于 B-C、E-F 之间）
   var SLOT_OFF = [0, 1, 2, -1, 3, 4, 5, 6, 7, -1, 8, 9, 10, 11];
@@ -55,9 +56,9 @@
 
   // ---- 物理规格（mm）----
   var PHYS = {
-    tapeWidthMM: 150,     // 纸带总宽
+    tapeWidthMM: 200,     // 纸带总宽（21 轨栅格需 20p+D ≈ 176.8mm）
     gearWidthMM: 130,     // 档位宽度 = 窗口全部键宽之和（固定，与 N 无关）
-    topStopMidi: 96,      // 最高档 C7（机械上止点；窗口 C7..C8 覆盖钢琴全音域）
+    topStopMidi: 96,      // 顶止点 C7（锚槽 88；窗口 C7..C8 覆盖钢琴全音域）
     holeRadiusMM: 1.25,   // 打孔半径（孔径 2.5mm）
     minHoleC2C: 4.0,      // 孔缘间距 ≥ 1.5mm + 孔径 2.5 → 任意两孔最小孔心距
     edgeMarginMM: 1.5,    // 最外侧孔缘距纸带边
@@ -66,11 +67,9 @@
     mmPerBeat: 9,         // 每拍走带长度
     minGapMM: 4.0,        // 同轨相邻两孔最小孔心距（拨片约束；孔缘隔 1.5mm 恰达规格）
     stationGapMM: 105,    // 两排滚轮沿走带方向间距
-    shiftMs: 400,         // 换挡耗时：按下换挡键 → 键盘滑动到位
-    shiftLeadMs: 600,     // 打孔提前量 = 400ms 换挡 + 200ms 余量
-    // 换挡滚轮中心距档位边 c=4.4：换挡孔 vs 对排端键孔孔心距 ≈ 4.732 ≥ 4.0，
-    // 两排换挡孔对 Δx = D ≈ 4.311 ✓ —— 纯 x 几何即满足全孔距规格
-    shiftGapMM: 4.4
+    shiftMs: 400,         // 整档换挡耗时：按下整档键 → 键盘滑动到位
+    shiftLeadMs: 600,     // 整档打孔提前量 = 400ms 换挡 + 200ms 余量
+    halfShiftMs: 10       // 半音换挡耗时（视为瞬时；链逐列 1 孔）
   };
   var PPB = 4; // 每拍编辑栅格数（col），1 col = 2.25mm
 
@@ -79,9 +78,9 @@
   PHYS.blackKeyMM = PHYS.whiteKeyMM * 6 / 7;                    // ≈ 7.9592
   PHYS.slotPitchMM = (PHYS.whiteKeyMM + PHYS.blackKeyMM) / 2;   // 13w/14 ≈ 8.6224
   PHYS.rowOffsetMM = PHYS.slotPitchMM / 2;                      // D = 半槽栅 ≈ 4.3112（跨排最小孔心距）
-  // 档位带在纸带上的 x0：换挡轮（两侧 shiftGap）+ D 偏移整体居中于 150mm
-  PHYS.bandX0MM = (PHYS.tapeWidthMM - (2 * PHYS.shiftGapMM + PHYS.gearWidthMM + PHYS.rowOffsetMM)) / 2
-    + PHYS.shiftGapMM; // ≈ 7.8444（最外孔缘距带边 ≈ 2.19mm ≥ 1.5mm ✓）
+  // 档位带 x0：21 轨栅格（左端 −1b 到右端 +1b 含 D 偏移 = 20p+D）整体居中于纸带宽
+  PHYS.bandX0MM = (PHYS.tapeWidthMM - (20 * PHYS.slotPitchMM + PHYS.rowOffsetMM)) / 2
+    - (PHYS.whiteKeyMM / 2 - 3 * PHYS.slotPitchMM); // ≈ 32.844（两侧孔缘边距 ≈ 10.4mm）
 
   // ---- 档位表：锚槽 0 起每档 +14 槽（= 1 个八度，相邻档共享边界槽），末档补 C7 上止点 ----
   var SLOT_STEP = SLOT_COUNT - 1; // 14
@@ -94,26 +93,39 @@
   })();
   var GEAR_BASES = GEAR_SLIDES.map(slotPitch); // [A0,A1,A2,A3,A4,A5,A6,C7] = [21,33,45,57,69,81,93,96]
   var W_MAX = GEAR_SLIDES.length - 1;         // 7
+  var HOME_PRESSES = Math.ceil(TOP_SLOT / SLOT_STEP); // 7：从任意位置连按 ◀ 钉底 A0
 
-  // ---- 轨位几何 ----
-  // lane 0 = ◀◀（档位宽左外 shiftGap）、lane 1..15 = 槽 0..14（键心在档位带内）、
-  // lane 16 = ▶▶（右外 shiftGap）；下排（row0 主旋律）整排右移 D
+  // ---- 轨位几何（21 轨全上统一槽栅）----
+  // lane → 槽栅位置（自档位带左缘的 p 倍数；lane 1..15 = 槽位 0..14）：
+  // 0=◀◀（−1p，紧贴档位带左）、16=▶▶（+15p，紧贴右）、17=−1a（−2p）、18=−1b（−3p）、
+  // 19=+1a（+16p）、20=+1b（+17p）；下排（row0 主旋律）整排右移 D
+  var LANE_GRID_P = (function () {
+    var g = {};
+    for (var l = 1; l <= SLOT_COUNT; l++) g[l] = l - 1;
+    g[0] = -1;
+    g[SLOT_COUNT + 1] = 15;  // ▶▶
+    g[SLOT_COUNT + 2] = -2;  // −1a
+    g[SLOT_COUNT + 3] = -3;  // −1b
+    g[SLOT_COUNT + 4] = 16;  // +1a
+    g[SLOT_COUNT + 5] = 17;  // +1b
+    return g;
+  })();
   function laneXMM(row, lane) {
-    var x = lane === 0 ? -PHYS.shiftGapMM
-      : lane === LANES_PER_ROW - 1 ? PHYS.gearWidthMM + PHYS.shiftGapMM
-      : PHYS.whiteKeyMM / 2 + (lane - 1) * PHYS.slotPitchMM;
-    return PHYS.bandX0MM + x + (row === 0 ? PHYS.rowOffsetMM : 0);
+    return PHYS.bandX0MM + PHYS.whiteKeyMM / 2 + LANE_GRID_P[lane] * PHYS.slotPitchMM
+      + (row === 0 ? PHYS.rowOffsetMM : 0);
   }
-  function isShiftLane(lane) { return lane === 0 || lane === LANES_PER_ROW - 1; }
-  // 死轨：该档位下压在虚拟黑键位上的轨（永不打孔）
-  function isDeadLane(lane, gear) {
-    var s = ((GEAR_SLIDES[gear] + lane - 1) % 14 + 14) % 14;
-    return s === 3 || s === 9;
+  function isShiftLane(lane) { return lane === 0 || lane >= SLOT_COUNT + 1; } // ◀/▶/4 半音位
+  function isHalfLane(lane) { return lane >= SLOT_COUNT + 2; }                // 17..20 = ±1a/±1b
+  function halfLaneDir(lane) { return lane >= SLOT_COUNT + 4 ? 1 : -1; }      // +1 升 / −1 降
+  // 死轨：锚槽 s 下压在虚拟黑键位上的轨（永不打孔）
+  function isDeadLane(lane, s) {
+    var t = ((s + lane - 1) % 14 + 14) % 14;
+    return t === 3 || t === 9;
   }
-  // 档位 g 下 lane(1..15) 的实际音高（虚拟位 null）/ 音高在档位 g 下的 lane
-  function soundingMidi(lane, gear) { return slotPitch(GEAR_SLIDES[gear] + lane - 1); }
-  function laneOfMidi(midi, gear) { return pitchToSlot(midi) - GEAR_SLIDES[gear] + 1; }
-  // 含 midi 的档位（从 from 向外就近搜索；相邻档共享边界槽）；无解 -1
+  // 锚槽 s 下 lane(1..15) 的实际音高（虚拟位 null）/ 音高在锚槽 s 下的 lane
+  function soundingMidi(lane, s) { return slotPitch(s + lane - 1); }
+  function laneOfSlot(j, s) { return j - s + 1; }
+  // 含 midi 的档位（从 from 向外就近搜索；相邻档共享边界槽）；无解 -1（仅用于显示/历史）
   function gearOfMidi(midi, from) {
     var j = pitchToSlot(midi);
     for (var d = 0; d <= W_MAX; d++) {
@@ -127,10 +139,46 @@
     return -1;
   }
   function gearName(g) { return midiName(GEAR_BASES[g]); }
-  // 首音从归位底档（0）出发需要连按 ▶ 的次数；不可达（越出全档位音域）返回 0
-  function firstPressCount(midi) {
-    var g = gearOfMidi(midi, 0);
-    return g > 0 ? g : 0;
+  // 锚槽显示名：就近档名 + 半音偏移（如 "A2+3"）
+  function gearNameFromSlot(s) {
+    var g = 0;
+    for (var i = 0; i < GEAR_SLIDES.length; i++) if (GEAR_SLIDES[i] <= s) g = i;
+    var off = s - GEAR_SLIDES[g];
+    return gearName(g) + (off > 0 ? '+' + off : '');
+  }
+
+  // ---- 混合换挡：键盘锚槽位置模型 ----
+  // 位置 s ∈ [0, TOP_SLOT]：整档键 ±14 槽/按（400ms），半音键 ±1 槽/按（10ms，a/b 双轨交替）。
+  // 移动分解 Δ = 14a + b（|b| ≤ 13），按压数 = |a| + |b|；允许过冲回调（如 +13 = 整档+14 − 半音1），
+  // 仅当整档落点不出 [0, TOP_SLOT]。
+  function decompose(delta, s) {
+    var a = Math.trunc(delta / 14), b = delta - 14 * a; // b 与 Δ 同号（或 0）
+    if (b > 7) { if (s + 14 * (a + 1) <= TOP_SLOT) { a++; b -= 14; } }
+    else if (b < -7) { if (s + 14 * (a - 1) >= 0) { a--; b += 14; } }
+    return { whole: a, half: b };
+  }
+  function pressCount(delta, s) {
+    var d = decompose(delta, s);
+    return Math.abs(d.whole) + Math.abs(d.half);
+  }
+  // 覆盖槽区间 [lo, hi] 的最优目标锚槽：合法区间内按压数最少，平手取距当前位最近
+  // （纯就近会把音停在窗口边缘，上方伙伴音被迫大量半音按压而钳制；按压数最少
+  //   天然偏向整档倍数的锚槽——倍频点无需半音回调；平手取近保半音链时序好安放）
+  function bestTarget(lo, hi, s) {
+    var a = Math.max(0, hi - (SLOT_COUNT - 1)), b = Math.min(TOP_SLOT, lo);
+    if (a > b) return null; // 组跨 > 窗口跨度，无整组解
+    var best = null, bestScore = Infinity;
+    for (var t = a; t <= b; t++) {
+      var score = pressCount(t - s, s) * 1000 + Math.abs(t - s);
+      if (score < bestScore) { bestScore = score; best = t; }
+    }
+    return best;
+  }
+  // 首音（从底位 s=0 出发）的移动方案：整档 whole 按 + 半音 |half| 按
+  function firstMovePlan(midi) {
+    var j = pitchToSlot(midi);
+    var t = bestTarget(j, j, 0);
+    return decompose(t - 0, 0);
   }
   // 孔在带长方向的坐标：下排（主旋律，row0）比同拍上排（和弦，row1）靠带尾 105mm。
   // mmb：本曲每拍毫米数（最密间隔拉长后可能与 PHYS.mmPerBeat 不同），缺省标准值
@@ -139,16 +187,16 @@
       + (row === 0 ? PHYS.stationGapMM : 0);
   }
 
-  // ---- 播放时的键盘挡位模型 ----
-  // 从孔序列提取每排换挡事件时间线：[[{beat,dir,arrive}, ...], [上排...]]（按拍升序）
+  // ---- 播放时的键盘位置模型（锚槽 s）----
+  // 从孔序列提取每排换挡事件时间线：[[{beat,dir,arrive,half}, ...], [上排...]]（按拍升序）。
   // tempo：变速曲传 makeTempoMap 结果，恒定速度传 BPM 数字（缺省 120）。
-  // arrive = 触发拍 + 换挡耗时 400ms（按该处速度折算回拍），即键盘到位时刻。
+  // 整档：dir=±14、arrive=触发拍+400ms；半音：dir=±1、arrive≈触发拍（10ms 视为瞬时）。
   function buildShiftTimeline(holes, tempo) {
     var tm = tempo && tempo.beatToTime ? tempo : null;
     var bpm0 = typeof tempo === 'number' ? tempo : 120;
-    function arriveOf(beat) {
-      return tm ? tm.timeToBeat(tm.beatToTime(beat) + PHYS.shiftMs / 1000)
-                : beat + (PHYS.shiftMs / 1000) * bpm0 / 60;
+    function arriveOf(beat, ms) {
+      return tm ? tm.timeToBeat(tm.beatToTime(beat) + ms / 1000)
+                : beat + (ms / 1000) * bpm0 / 60;
     }
     var tl = [[], []], lastArrive = [0, 0];
     for (var i = 0; i < holes.length; i++) {
@@ -156,44 +204,63 @@
       if (h.row !== 0 && h.row !== 1) continue;
       if (isShiftLane(h.lane)) {
         var beat = (h.col + 0.5) / PPB;
-        var arrive = Math.max(arriveOf(beat), beat, lastArrive[h.row]);
-        lastArrive[h.row] = arrive;
-        tl[h.row].push({ beat: beat, dir: h.lane === LANES_PER_ROW - 1 ? 1 : -1, arrive: arrive });
+        var half = isHalfLane(h.lane);
+        var dir = half ? halfLaneDir(h.lane) : (h.lane === SLOT_COUNT + 1 ? SLOT_STEP : -SLOT_STEP);
+        var arrive = half
+          ? Math.max(arriveOf(beat, PHYS.halfShiftMs), beat)
+          : Math.max(arriveOf(beat, PHYS.shiftMs), beat, lastArrive[h.row]);
+        if (!half) lastArrive[h.row] = arrive;
+        tl[h.row].push({ beat: beat, dir: dir, arrive: arrive, half: half });
       }
     }
     tl[0].sort(function (a, b) { return a.beat - b.beat; });
     tl[1].sort(function (a, b) { return a.beat - b.beat; });
     return tl;
   }
-  // 某排在 beat 时刻的键盘状态：s=档位(0..W_MAX)；moving=换挡键已触发但键盘尚在滑动（400ms 内）。
-  // 物理模型：换挡键触发后键盘 400ms 才到位——到位前仍按旧挡击发，故与换挡键同拍的
-  // 音符照旧挡发音；到位后新挡才生效。s 钳位 ≥0：曲首归位连按 ◀ 钉底，已在底端时空按
-  // 被机械限位吸收（挡位不出现负值）。
+  // 某排在 beat 时刻的键盘状态：s=锚槽(0..TOP_SLOT)；moving=整档键已触发但键盘尚在滑动（400ms 内）。
+  // 物理模型：整档键触发后键盘 400ms 才到位——到位前仍按旧位击发；半音 10ms 瞬时无滑行。
+  // 事件按触发拍升序，但到位拍不单调（半音瞬时、整档 400ms 交错）——须扫过全部已触发
+  // 事件、按各自到位拍累计，不能在首个未到位事件处早退。
+  // s 钳位 [0, TOP_SLOT]：曲首归位连按 ◀ 钉底、越出止点的空按被机械限位吸收。
   function shiftInfoAt(tl, row, beat) {
-    var arr = tl[row] || [], s = 0;
+    var arr = tl[row] || [], s = 0, moving = false, dir = 0;
     for (var i = 0; i < arr.length; i++) {
-      if (arr[i].arrive <= beat + 1e-9) { s += arr[i].dir; if (s < 0) s = 0; continue; }
-      if (arr[i].beat <= beat + 1e-9) return { s: s, moving: true, dir: arr[i].dir };
-      break;
+      if (arr[i].beat > beat + 1e-9) break; // 之后才触发的与现在无关
+      if (arr[i].arrive <= beat + 1e-9) {
+        s += arr[i].dir;
+        if (s < 0) s = 0;
+        if (s > TOP_SLOT) s = TOP_SLOT;
+      } else if (!arr[i].half) {
+        moving = true; dir = arr[i].dir;
+      }
     }
-    return { s: s, moving: false, dir: 0 };
+    return { s: s, moving: moving, dir: dir };
   }
   function shiftAt(tl, row, beat) { return shiftInfoAt(tl, row, beat).s; }
 
   /**
-   * 单排换挡调度。
+   * 单排换挡调度（混合换挡）。
    * @param notes [{col, midi}] 按 col 升序（col 为编辑栅格列）
    * @param row  0=下排(主旋律) 1=上排(和弦)
    * @param opts.tempoMap 变速曲速度表（缺省恒定 opts.bpm，再缺省 120）
-   * @param opts.home 曲首强制归位：连按 3 次 ◀ 钉底到初始档位 A0（键盘初始位置不确定）
-   * @returns {holes:[{row,lane,col,midi,serveCol}], shifts:[{row,dir,col}], clamped, finalW, home, homeOk}
-   * lane: 0=换挡键 ◀◀ 1..15=槽位 16=换挡键 ▶▶；midi 为该孔在换挡完成后的实际音高
-   * （换挡键孔为 null）；serveCol = 该换挡孔所服务的音符列（排产/校验用）
-   * home：归位孔数（0 或 3，shifts 不计入归位）；homeOk：归位末次按动 + 升挡链能否赶在首音前
+   * @param opts.home 曲首强制归位：连按 7 次 ◀ 钉底 A0（键盘初始位置不确定）
+   * @returns {holes, shifts(整档), halfShifts, clamped, finalS, home, homeOk, rescues}
+   * lane: 0=◀◀ 1..15=槽位 16=▶▶ 17=−1a 18=−1b 19=+1a 20=+1b；
+   * midi 为该孔在换挡完成后的实际音高（换挡键孔为 null）；
+   * serveCol = 该换挡孔所服务的音符列（排产/校验用）
    *
-   * 换挡提前量（物理）：换挡键孔触发 + shiftLeadMs(600ms) ≤ 目标音符触发——
-   * 键盘 400ms 滑动到位 + 200ms 余量，按孔位处的走带速度折算成列数。
-   * 连续多次按动：上一按触发 + shiftMs(400ms)（换挡完成）后才允许下一按触发。
+   * 位置模型：锚槽 s ∈ [0, TOP_SLOT]，窗口 [s, s+14]。
+   *  - 音符槽 j 在窗口内 → 直接落轨（hysteresis：能不换就不换）
+   *  - 越窗 → 目标锚槽就近（升到 j−14 或降到 j），Δ = 14a + b 分解为整档链 + 半音链
+   *
+   * 整档排产（物理约束）：
+   *  1) 到位提前量：触发 + 600ms（硬约束 400ms）≤ 目标音触发
+   *  2) 旧位音保护：最后一个旧位音须在到位前触发
+   *  3) 连续按动：间隔 ≥ 400ms（lastPressT）
+   * 半音排产（10ms 瞬时）：链右对齐到音符列前 1 列、逐列 1 孔，a/b 轨交替
+   * （同轨全程 ≥2 列 = 4.5mm）；链须整体落在 [max(minShiftCol, prevCol), col−1]
+   * ——半音孔可与上一音同列（同拍触发、+10ms 到位，上一音仍按旧位发音）。
+   * 物理放不下 → 钳制（候选跨排救援）。
    */
   function scheduleRow(notes, row, opts) {
     opts = opts || {};
@@ -205,7 +272,7 @@
     var headMin = PHYS.edgeMarginMM + PHYS.holeRadiusMM; // 孔心距带头的最小值（1.5+1.25 = 2.75）
     var minShiftCol = Math.ceil((headMin - PHYS.leadInMM - (row === 0 ? PHYS.stationGapMM : 0)) / mmb * PPB);
     function tTime(b) { return tm ? tm.beatToTime(b) : b * 60 / bpm0; }
-    // 换挡键排产（物理约束）：
+    // 整档键排产（物理约束）：
     //  1) 键盘须在目标音触发前到位：触发 + shiftMs(400ms) ≤ 目标触发；优先留 shiftLeadMs(600ms) 余量
     //  2) 旧挡音保护：换挡键允许早于上一音(prevCol)——到位前该排仍按旧挡击发（滑行中照常发旧挡音），
     //     但最后一个旧挡音必须在到位前触发：触发 ≥ tPrev - 400ms
@@ -239,58 +306,86 @@
       while (c >= minShiftCol && tTime((c + 0.5) / PPB) > limit + 1e-9) c--;
       return c < minShiftCol ? null : c;
     }
-    var holes = [], shifts = [], clamped = 0;
+    var holes = [], shifts = [], halfShifts = 0, clamped = 0;
     var rescues = []; // 换挡来不及被钳制的音（候选跨排救援：另一排可能恰在该档）
-    var w = 0, prevCol = null, lastPressT = -Infinity;
+    var s = 0, prevCol = null, lastPressT = -Infinity;
     var home = 0, homeOk = true, homeBlock = false;
+    var nextHalfUp = 19, nextHalfDown = 17; // 半音双轨交替游标（+1a/+1b、−1a/−1b）
 
-    // 曲首强制归位：连按 3 次 ◀ 钉底到 A0（间隔 ≥400ms 且同轨孔距 ≥minGapMM）。
-    // margin 不只保证"归位完成 ≤ 首音"：首音自身要升挡时，其换挡链（每按 600ms 提前量、
-    // 相邻按动间隔 400ms）必须完整排进 [归位末按, 首音] 区间，否则归位会挤掉首音的升挡键。
+    // 曲首强制归位：连按 7 次 ◀ 钉底 A0（间隔 ≥400ms 且同轨孔距 ≥minGapMM）。
+    // margin 不只保证"归位完成 ≤ 首音"：首音自身的移动链（整档每按 600ms 提前量、
+    // 相邻按动 400ms；半音逐列 1 列/按）必须完整排进 [归位末按, 首音] 区间。
     if (opts.home && notes.length) {
       var secPerCol = (tTime(0.25) - tTime(0)) || 1e-9;
       var vMM = mmb / (secPerCol * PPB); // 头部走带速度 mm/s
       var sCols = Math.max(1, Math.ceil(Math.max(PHYS.shiftMs / 1000, PHYS.minGapMM / vMM) / secPerCol));
-      var c0 = minShiftCol + 2 * sCols; // 最早布局时末次按动列
-      var nPress = firstPressCount(notes[0].midi);
+      var c0 = minShiftCol + (HOME_PRESSES - 1) * sCols; // 最早布局时末次按动列
+      var plan = firstMovePlan(notes[0].midi);
       var margin = PHYS.shiftMs / 1000
-        + (nPress > 0 ? PHYS.shiftLeadMs / 1000 + (nPress - 1) * PHYS.shiftMs / 1000 : 0);
+        + (plan.whole > 0 ? PHYS.shiftLeadMs / 1000 + (plan.whole - 1) * PHYS.shiftMs / 1000 : 0)
+        + Math.abs(plan.half) * secPerCol;
       var tFirst = tTime((notes[0].col + 0.5) / PPB);
       if (tTime((c0 + 0.5) / PPB) + margin <= tFirst + 1e-9) {
-        for (var hp = 0; hp < 3; hp++) {
+        for (var hp = 0; hp < HOME_PRESSES; hp++) {
           holes.push({ row: row, lane: 0, col: minShiftCol + hp * sCols, midi: null, serveCol: notes[0].col });
         }
-        home = 3;
+        home = HOME_PRESSES;
         lastPressT = tTime((c0 + 0.5) / PPB);
       } else {
         homeOk = false; // 调用处顺延整曲重试；重试耗尽仍失败时保留归位孔（键盘绝对位置优先）
       }
     }
 
+    // 同列（同拍）音符组：整组须同窗击发——组内跨度 ≤14 槽时按组选目标锚槽，
+    // 否则退化为逐音处理。组按 col 分桶（notes 已按 col 稳定排序，同列连续）。
+    var grp = {};
+    for (var gi = 0; gi < notes.length; gi++) {
+      var gc = notes[gi].col, gj = pitchToSlot(notes[gi].midi);
+      if (!grp[gc]) grp[gc] = { jMin: gj, jMax: gj };
+      else {
+        if (gj < grp[gc].jMin) grp[gc].jMin = gj;
+        if (gj > grp[gc].jMax) grp[gc].jMax = gj;
+      }
+    }
+
     for (var i = 0; i < notes.length; i++) {
-      var col = notes[i].col, midi = notes[i].midi;
+      var col = notes[i].col, midi = notes[i].midi, j = pitchToSlot(midi);
+      // 本音须与之同窗的音域范围：组首音且组跨 ≤14 → 整组；否则仅本音
+      var g = grp[col];
+      var useGroup = prevCol !== col && g.jMax - g.jMin <= SLOT_COUNT - 1;
+      var lo = useGroup ? g.jMin : j, hi = useGroup ? g.jMax : j;
 
-      // 1. 找可行档位（按离当前挡的距离向外搜索；相邻档共享边界槽，就近命中可免于换挡）
-      var target = gearOfMidi(midi, w);
-
-      // 2. 全档位音域外（低于 A0 或高于顶档窗口）→ 钳制到当前窗口最近键
-      //    （钳制结果必落 lane 1 或 15——锚槽与末槽恒为真实键，无死轨问题）
-      if (target === -1) {
+      // 1. 全机音域外（低于 A0 / 高于 C8 顶窗）→ 钳制到当前窗口最近真实键
+      //    （机械止点 [0, TOP_SLOT]：锚槽出不了界，跨不出去的音就近击发）
+      if (j < 0 || j > TOP_SLOT + SLOT_COUNT - 1) {
         clamped++;
-        var lc = Math.max(1, Math.min(SLOT_COUNT, laneOfMidi(midi, w)));
-        holes.push({ row: row, lane: lc, col: col, midi: soundingMidi(lc, w), shift: w });
+        var lc0 = j < 0 ? 1 : SLOT_COUNT;
+        var st0 = j < 0 ? 1 : -1;
+        while (slotPitch(s + lc0 - 1) === null) lc0 += st0;
+        holes.push({ row: row, lane: lc0, col: col, midi: slotPitch(s + lc0 - 1), shift: s });
         prevCol = col;
         continue;
       }
 
-      // 3. 换挡（可能逐档多按）；按物理约束求按动列，无解则钳制
-      if (target !== w) {
-        var nPress2 = Math.abs(target - w);
+      // 2. 覆盖范围内 → 直接落轨（就近滞回：能不换就不换）
+      if (lo >= s && hi <= s + SLOT_COUNT - 1) {
+        holes.push({ row: row, lane: j - s + 1, col: col, midi: midi, shift: s });
+        prevCol = col;
+        continue;
+      }
+
+      // 3. 目标锚槽（覆盖 [lo, hi] 的合法区间内取按压数最少者）+ 混合分解 Δ = 14·whole + half
+      var target = bestTarget(lo, hi, s);
+      var dec = decompose(target - s, s);
+
+      // 整档链（沿用原物理排产；whole=0 则跳过）
+      var presses = null;
+      if (dec.whole !== 0) {
+        var nW = Math.abs(dec.whole);
         var p0 = pressColFor(col, prevCol);
-        var presses = null;
         if (p0 !== null) {
           presses = [p0];
-          for (var p = 1; p < nPress2; p++) {
+          for (var p = 1; p < nW; p++) {
             var pc = prevPressCol(presses[0]);
             if (pc === null) { presses = null; break; }
             presses.unshift(pc);
@@ -299,8 +394,8 @@
           // 不足时整链后移补足；链尾赶不上音符（400ms 硬约束）则放弃换挡改钳制
           if (presses !== null &&
               tTime((presses[0] + 0.5) / PPB) < lastPressT + PHYS.shiftMs / 1000 - 1e-9) {
-            var secPerCol = (tTime(1) - tTime(0)) / PPB || 1e-9;
-            var deficit = Math.ceil((lastPressT + PHYS.shiftMs / 1000 - tTime((presses[0] + 0.5) / PPB)) / secPerCol);
+            var secPerCol2 = (tTime(1) - tTime(0)) / PPB || 1e-9;
+            var deficit = Math.ceil((lastPressT + PHYS.shiftMs / 1000 - tTime((presses[0] + 0.5) / PPB)) / secPerCol2);
             for (var dp = 0; dp < presses.length; dp++) presses[dp] += deficit;
             if (tTime((presses[presses.length - 1] + 0.5) / PPB) > tTime((col + 0.5) / PPB) - PHYS.shiftMs / 1000 + 1e-9) {
               presses = null;
@@ -308,28 +403,54 @@
             }
           }
         }
-        if (presses === null) { // 物理放不下（换挡来不及），放弃换挡改钳制
-          clamped++;
-          var lc2 = Math.max(1, Math.min(SLOT_COUNT, laneOfMidi(midi, w)));
-          holes.push({ row: row, lane: lc2, col: col, midi: soundingMidi(lc2, w), shift: w, clamp: true });
-          rescues.push({ col: col, midi: midi });
-          prevCol = col;
-          continue;
-        }
-        var dir = target > w ? 1 : -1;
+      }
+
+      // 4. 半音链：|half| 个 ±1，右对齐到 col−1 逐列 1 孔；
+      //    须 ≥ max(minShiftCol, prevCol)（可与上一音同列：同拍触发 +10ms 到位）
+      var rem = Math.abs(dec.half);
+      var hDir = dec.half > 0 ? 1 : -1;
+      var halfOk = true;
+      if (rem > 0) {
+        var lo = prevCol === null ? minShiftCol : Math.max(minShiftCol, prevCol);
+        if (col - rem < lo) halfOk = false;
+      }
+
+      if ((dec.whole !== 0 && presses === null) || !halfOk) {
+        // 物理放不下（换挡来不及）→ 钳制到当前窗口最近真实键（跨排救援候选）
+        clamped++;
+        var lc = j > s + SLOT_COUNT - 1 ? SLOT_COUNT : 1;
+        var step = j > s + SLOT_COUNT - 1 ? -1 : 1;
+        while (lc >= 1 && lc <= SLOT_COUNT && slotPitch(s + lc - 1) === null) lc += step;
+        holes.push({ row: row, lane: lc, col: col, midi: slotPitch(s + lc - 1), shift: s, clamp: true });
+        rescues.push({ col: col, midi: midi });
+        prevCol = col;
+        continue;
+      }
+
+      // 5. 落孔：整档链 → 半音链（a/b 交替）→ 音符
+      if (presses !== null) {
+        var dirW = dec.whole > 0 ? 1 : -1;
         for (var p2 = 0; p2 < presses.length; p2++) {
           var tb = presses[p2];
-          shifts.push({ row: row, dir: dir, col: tb });
-          holes.push({ row: row, lane: dir > 0 ? LANES_PER_ROW - 1 : 0, col: tb, midi: null, serveCol: col });
-          w += dir;
+          shifts.push({ row: row, dir: dirW, col: tb });
+          holes.push({ row: row, lane: dirW > 0 ? SLOT_COUNT + 1 : 0, col: tb, midi: null, serveCol: col });
+          s += dirW * SLOT_STEP;
         }
         lastPressT = tTime((presses[presses.length - 1] + 0.5) / PPB);
       }
-
-      holes.push({ row: row, lane: laneOfMidi(midi, w), col: col, midi: midi, shift: w });
+      for (var hq = 0; hq < rem; hq++) {
+        var hc = col - rem + hq;
+        var hl = hDir > 0 ? nextHalfUp : nextHalfDown;
+        if (hDir > 0) nextHalfUp = nextHalfUp === 19 ? 20 : 19;
+        else nextHalfDown = nextHalfDown === 17 ? 18 : 17;
+        halfShifts++;
+        holes.push({ row: row, lane: hl, col: hc, midi: null, serveCol: col });
+        s += hDir;
+      }
+      holes.push({ row: row, lane: j - s + 1, col: col, midi: midi, shift: s });
       prevCol = col;
     }
-    return { holes: holes, shifts: shifts, clamped: clamped, finalW: w, home: home, homeOk: homeOk && !homeBlock, rescues: rescues };
+    return { holes: holes, shifts: shifts, halfShifts: halfShifts, clamped: clamped, finalS: s, home: home, homeOk: homeOk && !homeBlock, rescues: rescues };
   }
 
   /** 整曲顺延 beats 拍（归位留时间用）：复制并平移 notes / tempos 的 tick。
@@ -422,10 +543,11 @@
         var secPerCol = 60 / V / PPB;
         var vMM = mmPerBeat * V / 60;
         var sCols = Math.max(1, Math.ceil(Math.max(PHYS.shiftMs / 1000, PHYS.minGapMM / vMM) / secPerCol));
-        var c0 = minShiftCol + 2 * sCols;
-        var nPress = firstPressCount(first.midi);
+        var c0 = minShiftCol + (HOME_PRESSES - 1) * sCols;
+        var plan = firstMovePlan(first.midi);
         var margin = PHYS.shiftMs / 1000
-          + (nPress > 0 ? PHYS.shiftLeadMs / 1000 + (nPress - 1) * PHYS.shiftMs / 1000 : 0);
+          + (plan.whole > 0 ? PHYS.shiftLeadMs / 1000 + (plan.whole - 1) * PHYS.shiftMs / 1000 : 0)
+          + Math.abs(plan.half) * secPerCol;
         var tF = tm0 ? tm0.beatToTime((first.col + 0.5) / PPB) : (first.col + 0.5) / PPB * 60 / V;
         var need = (c0 + 0.5) / PPB * 60 / V + margin - tF;
         if (need > 1e-9) {
@@ -481,7 +603,7 @@
         for (var i = 0; i < own.rescues.length; i++) {
           var rs = own.rescues[i];
           var s = shiftAt(tl, ownRow === 0 ? 1 : 0, (rs.col + 0.5) / PPB);
-          var lane = laneOfMidi(rs.midi, s);
+          var lane = laneOfSlot(pitchToSlot(rs.midi), s);
           if (lane < 1 || lane > SLOT_COUNT) continue; // 另一排窗内无此音
           var idx = -1;
           for (var h = 0; h < own.holes.length; h++) {
@@ -589,6 +711,7 @@
           clamped: rL.clamped + rU.clamped,
           rescued: rescued,
           shifts: [rL.shifts.length, rU.shifts.length],
+          halfShifts: [rL.halfShifts, rU.halfShifts],
           homing: [rL.home, rU.home],
           homeOk: [rL.homeOk, rU.homeOk],
           pushedNotes: pushed,
@@ -627,10 +750,10 @@
   }
 
   /**
-   * 示例曲《小星星》（D 大调）：下排主旋律 + 上排和弦（D-G-A 进行），整体在 A4/A5 档
-   * （档位窗口跨整八度，D5/F#5/A5/G5 等全部落在 g4 窗 56..70 内，仅 B5 需升 1 档到 g5）：
-   * 曲首两排各留 3 拍给升挡链（100bpm 下链 [-1,2,5,8]），下排 B5 处再升 1 次、
-   * 回 G5 时降 1 次，演示双向换挡调度
+   * 示例曲《小星星》（D 大调）：下排主旋律 + 上排和弦（D-G-A 进行），混合换挡演示：
+   * 曲首两排各整档 4 次到锚槽 56（A4 档）；A5 在窗顶；下排 B5 越窗整档 +1、
+   * 回 G5 时整档 −1；上排 B5 和弦越窗 +2 用 2 个半音键（a/b 交替）。
+   * 首音空出 3 拍给升挡链留位。
    * @returns {holes, endCol, bpm, shifts}
    */
   function demoSong() {
@@ -660,7 +783,7 @@
     merged.sort(function (a, b) { return a.col - b.col || a.row - b.row || a.lane - b.lane; });
     var endCol = 0;
     for (var j = 0; j < merged.length; j++) if (merged[j].col + 1 > endCol) endCol = merged[j].col + 1;
-    return { holes: merged, endCol: endCol, bpm: 100, shifts: [rL.shifts.length, rU.shifts.length] };
+    return { holes: merged, endCol: endCol, bpm: 100, shifts: [rL.shifts.length, rU.shifts.length], halfShifts: [rL.halfShifts, rU.halfShifts] };
   }
 
   // ---- 变速播放支持：与 music-box 相同的分段常速积分 tempo map ----
@@ -721,6 +844,9 @@
     N_WHITE: N_WHITE,
     SLOT_COUNT: SLOT_COUNT,
     LANES_PER_ROW: LANES_PER_ROW,
+    SLOT_STEP: SLOT_STEP,
+    TOP_SLOT: TOP_SLOT,
+    HOME_PRESSES: HOME_PRESSES,
     GEAR_SLIDES: GEAR_SLIDES,
     GEAR_BASES: GEAR_BASES,
     W_MAX: W_MAX,
@@ -729,13 +855,17 @@
     slotPitch: slotPitch,
     pitchToSlot: pitchToSlot,
     gearName: gearName,
+    gearNameFromSlot: gearNameFromSlot,
     laneXMM: laneXMM,
     holeYMM: holeYMM,
     isShiftLane: isShiftLane,
+    isHalfLane: isHalfLane,
+    halfLaneDir: halfLaneDir,
     isDeadLane: isDeadLane,
-    laneOfMidi: laneOfMidi,
+    laneOfSlot: laneOfSlot,
     gearOfMidi: gearOfMidi,
-    firstPressCount: firstPressCount,
+    decompose: decompose,
+    firstMovePlan: firstMovePlan,
     soundingMidi: soundingMidi,
     buildShiftTimeline: buildShiftTimeline,
     shiftAt: shiftAt,

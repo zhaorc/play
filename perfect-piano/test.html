@@ -12,10 +12,10 @@
 </style>
 </head>
 <body>
-<h1>纸带钢琴工坊 · 自测页（N=8 虚拟黑键槽位模型）</h1>
+<h1>纸带钢琴工坊 · 自测页（N=8 槽位 + 混合换挡）</h1>
 <div id="out"></div>
 <div id="summary"></div>
-<script src="js/pp-tape.js?v=17"></script>
+<script src="js/pp-tape.js?v=18"></script>
 <script src="js/punch-sender.js?v=3"></script>
 <script>
 (function () {
@@ -57,15 +57,15 @@
   // ---- 1. 槽位模型（虚拟黑键占位 → 均匀槽栅）----
   eq('每档 8 白键', K.N_WHITE, 8);
   eq('槽位数 15（2N-1）', K.SLOT_COUNT, 15);
-  eq('每排滚轮 17（◀+15 槽+▶）', K.LANES_PER_ROW, 17);
+  eq('每排滚轮 21（◀ + 15 槽 + ▶ + 4 半音位）', K.LANES_PER_ROW, 21);
   eq('槽0 = A0', K.slotPitch(0), 21);
   eq('槽3 虚拟（B-C 位）', K.slotPitch(3) === null, true);
   eq('槽9 虚拟（E-F 位）', K.slotPitch(9) === null, true);
   eq('槽4 = C1', K.slotPitch(4), 24);
   eq('槽13 = G#0', K.slotPitch(13), 32);
   eq('槽14 = A1（14 槽 = 一个八度）', K.slotPitch(14), 33);
-  eq('槽88 = C7（上止点）', K.slotPitch(88), 96);
-  eq('槽102 = C8（顶档窗顶）', K.slotPitch(102), 108);
+  eq('槽88 = C7（顶止点）', K.slotPitch(88), 96);
+  eq('槽102 = C8（顶窗）', K.slotPitch(102), 108);
   eq('pitchToSlot(A0) = 0', K.pitchToSlot(21), 0);
   eq('pitchToSlot(C4) = 46', K.pitchToSlot(60), 46);
   eq('pitchToSlot(C5) = 60', K.pitchToSlot(72), 60);
@@ -76,169 +76,160 @@
   for (var m = 21; m <= 108; m++) { if (K.slotPitch(K.pitchToSlot(m)) !== m) { rtS = false; break; } }
   ok('音高 ↔ 槽位全域往返（21..108 可达域）', rtS);
 
-  // ---- 2. 档位表（锚槽每档 +14 = 一个八度；末档补 C7 上止点 88）----
-  eq('档位锚槽表', K.GEAR_SLIDES.join(','), '0,14,28,42,56,70,84,88');
-  eq('档位基音表', K.GEAR_BASES.join(','), '21,33,45,57,69,81,93,96');
-  eq('W_MAX = 7', K.W_MAX, 7);
-  eq('档名：0=A0', K.gearName(0), 'A0');
-  eq('档名：4=A4', K.gearName(4), 'A4');
-  eq('档名：6=A6', K.gearName(6), 'A6');
-  eq('档名：7=C7', K.gearName(7), 'C7');
-  eq('A0 在底档', K.gearOfMidi(21, 0), 0);
-  eq('A1 边界槽属当前档（就近不换挡）', K.gearOfMidi(33, 0), 0);
-  eq('C4 从底档就近 → A3 档 g3', K.gearOfMidi(60, 0), 3);
-  eq('C7 就近 → A6 档 g6（A6 窗含 C7）', K.gearOfMidi(96, 0), 6);
-  eq('C8 只能在顶档 C7（g7）', K.gearOfMidi(108, 0), 7);
-  eq('C#8 超全档位音域 → -1', K.gearOfMidi(109, 0), -1);
-  eq('soundingMidi(g7 lane1) = C7', K.soundingMidi(1, 7), 96);
-  eq('soundingMidi(g7 lane15) = C8（顶档窗顶）', K.soundingMidi(15, 7), 108);
-  eq('soundingMidi(g0 lane15) = A1', K.soundingMidi(15, 0), 33);
-  eq('soundingMidi(g3 lane5) = C4', K.soundingMidi(5, 3), 60);
-  eq('laneOfMidi(C4, g3) = 5', K.laneOfMidi(60, 3), 5);
-  eq('死轨：g0 lane4（B-C 虚拟位）', K.isDeadLane(4, 0), true);
-  eq('死轨：g0 lane10（E-F 虚拟位）', K.isDeadLane(10, 0), true);
-  eq('g0 lane3 实键', K.isDeadLane(3, 0), false);
-  eq('死轨：g5 lane4', K.isDeadLane(4, 5), true);
-  eq('死轨：g7 lane14（C7 档虚拟位）', K.isDeadLane(14, 7), true);
-  eq('g7 lane14 音高 null', K.soundingMidi(14, 7) === null, true);
-  eq('首按数 C4 → 3', K.firstPressCount(60), 3);
-  eq('首按数 C5 → 4', K.firstPressCount(72), 4);
-  eq('首按数 C7 → 6', K.firstPressCount(96), 6);
+  // ---- 2. 位置模型常量（锚槽 s ∈ [0,88]；整档 ±14；归位 7 按）----
+  eq('TOP_SLOT = 88（C7）', K.TOP_SLOT, 88);
+  eq('SLOT_STEP = 14（整档 = 1 八度）', K.SLOT_STEP, 14);
+  eq('HOME_PRESSES = 7（⌈88/14⌉ 次钉底）', K.HOME_PRESSES, 7);
+  eq('锚槽显示名 A0', K.gearNameFromSlot(0), 'A0');
+  eq('锚槽显示名 A2+7', K.gearNameFromSlot(35), 'A2+7');
+  eq('锚槽显示名 A3+4', K.gearNameFromSlot(46), 'A3+4');
+  eq('锚槽显示名 C7（顶止点）', K.gearNameFromSlot(88), 'C7');
+  // 移动分解 Δ = 14·whole + half（允许过冲回调，|b|>7 且整档落点不出 [0,88]）
+  eq('decompose(13,0) = +14−1', K.decompose(13, 0).whole + ',' + K.decompose(13, 0).half, '1,-1');
+  eq('decompose(27,0) = +28−1', K.decompose(27, 0).whole + ',' + K.decompose(27, 0).half, '2,-1');
+  eq('decompose(4,84) = +4 半音（过冲越顶，禁）', K.decompose(4, 84).whole + ',' + K.decompose(4, 84).half, '0,4');
+  eq('decompose(-15,30) = −14−1', K.decompose(-15, 30).whole + ',' + K.decompose(-15, 30).half, '-1,-1');
+  eq('decompose(7,0) = +7 半音（≤7 不过冲）', K.decompose(7, 0).whole + ',' + K.decompose(7, 0).half, '0,7');
+  eq('decompose(10,46) = +14−4', K.decompose(10, 46).whole + ',' + K.decompose(10, 46).half, '1,-4');
+  eq('首音方案 C4 = 3 整档', K.firstMovePlan(60).whole + ',' + K.firstMovePlan(60).half, '3,0');
+  eq('首音方案 C5 = 4 整档', K.firstMovePlan(72).whole + ',' + K.firstMovePlan(72).half, '4,0');
+  eq('首音方案 C7 = 6 整档', K.firstMovePlan(96).whole + ',' + K.firstMovePlan(96).half, '6,0');
+  eq('首音方案 C8 = 6 整档 + 4 半音', K.firstMovePlan(108).whole + ',' + K.firstMovePlan(108).half, '6,4');
+  eq('首音方案 A0 = 0（在初始窗内）', K.firstMovePlan(21).whole + ',' + K.firstMovePlan(21).half, '0,0');
+  eq('首音方案 G#2 = 1 整档', K.firstMovePlan(44).whole + ',' + K.firstMovePlan(44).half, '1,0');
+  eq('isShiftLane：0/16/17..20', K.isShiftLane(0) && K.isShiftLane(16) && K.isShiftLane(17) && K.isShiftLane(20) && !K.isShiftLane(15), true);
+  eq('isHalfLane：17..20', K.isHalfLane(17) && K.isHalfLane(20) && !K.isHalfLane(16) && !K.isHalfLane(0), true);
+  eq('halfLaneDir：−1a/−1b 降、+1a/+1b 升', [17, 18, 19, 20].map(function (l) { return K.halfLaneDir(l); }).join(','), '-1,-1,1,1');
 
-  // ---- 3. 轨位几何（孔缘 ≥1.5mm ⟺ 孔心 ≥4.0mm；孔缘距边 ≥1.5mm）----
+  // ---- 3. 轨位几何（21 轨全上统一槽栅；孔缘 ≥1.5mm ⟺ 孔心 ≥4.0mm）----
   var B0 = PHYS.bandX0MM, W = PHYS.whiteKeyMM, P = PHYS.slotPitchMM, D = PHYS.rowOffsetMM;
+  near('纸带宽 200mm', PHYS.tapeWidthMM, 200);
   near('白键宽 9.2857（=130×7/98）', W, 910 / 98);
-  near('黑键宽 7.9592（=6w/7）', PHYS.blackKeyMM, 910 * 6 / (98 * 7));
   near('槽栅距 8.6224（=13w/14）', P, 13 * 910 / (98 * 14));
   near('D = 半槽栅 4.3112', D, 13 * 910 / (98 * 28));
-  near('上排 ◀◀ x = B0−4.4（档位宽外）', K.laneXMM(1, 0), B0 - 4.4);
+  near('带 x0 ≈ 32.8444', B0, 32.84438775510205);
+  near('上排 ◀◀ x = B0+w/2−p', K.laneXMM(1, 0), B0 + W / 2 - P);
   near('上排 lane1 x = B0+w/2', K.laneXMM(1, 1), B0 + W / 2);
   near('下排 lane1 x（+D 右移）', K.laneXMM(0, 1), B0 + W / 2 + D);
-  near('上排 ▶▶ x = B0+134.4', K.laneXMM(1, 16), B0 + 134.4);
-  near('下排 ▶▶ x = B0+134.4+D', K.laneXMM(0, 16), B0 + 134.4 + D);
-  ok('最左孔缘距带边 ≥1.5mm（' + (K.laneXMM(1, 0) - 1.25).toFixed(3) + '）', K.laneXMM(1, 0) - 1.25 >= 1.5);
-  ok('最右孔缘距带边 ≥1.5mm（' + (150 - K.laneXMM(0, 16) - 1.25).toFixed(3) + '）', 150 - (K.laneXMM(0, 16) + 1.25) >= 1.5);
-  var sameRowOk = true;
-  for (var l = 1; l < 15; l++) { if (Math.abs(K.laneXMM(1, l + 1) - K.laneXMM(1, l) - P) > 1e-9) { sameRowOk = false; break; } }
-  ok('同排相邻键孔心距 = 槽栅距 8.62 ≥ 4.0', sameRowOk && P >= 4.0);
-  var crossKeyMin = Infinity;
-  for (var lu = 1; lu <= 15; lu++) for (var ll = 1; ll <= 15; ll++) {
-    var dk = Math.abs(K.laneXMM(1, lu) - K.laneXMM(0, ll));
-    if (dk < crossKeyMin) crossKeyMin = dk;
+  near('上排 ▶▶ x = B0+w/2+15p', K.laneXMM(1, 16), B0 + W / 2 + 15 * P);
+  near('上排 −1a x = B0+w/2−2p', K.laneXMM(1, 17), B0 + W / 2 - 2 * P);
+  near('上排 −1b x = B0+w/2−3p', K.laneXMM(1, 18), B0 + W / 2 - 3 * P);
+  near('上排 +1a x = B0+w/2+16p', K.laneXMM(1, 19), B0 + W / 2 + 16 * P);
+  near('上排 +1b x = B0+w/2+17p', K.laneXMM(1, 20), B0 + W / 2 + 17 * P);
+  ok('最左孔缘距带边 ≥1.5mm（' + (K.laneXMM(1, 18) - 1.25).toFixed(2) + '）', K.laneXMM(1, 18) - 1.25 >= 1.5);
+  ok('最右孔缘距带边 ≥1.5mm（' + (200 - K.laneXMM(0, 20) - 1.25).toFixed(2) + '）', 200 - (K.laneXMM(0, 20) + 1.25) >= 1.5);
+  var gridOk = true;
+  for (var l = 0; l < 16; l++) { // −1b→−1a→◀→槽1..15→▶→+1a 逐格
+    if (Math.abs(K.laneXMM(1, l + 1) - K.laneXMM(1, l) - P) > 1e-9) { gridOk = false; break; }
   }
-  ok('跨排键孔最小孔心距 = D（' + crossKeyMin.toFixed(4) + '）≥ 4.0', Math.abs(crossKeyMin - D) < 1e-9 && D >= 4.0);
-  near('换挡孔 vs 对排端键孔 = 4.732（≥4.0）', Math.abs(K.laneXMM(0, 0) - K.laneXMM(1, 1)), W / 2 + PHYS.shiftGapMM - D);
-  ok('换挡孔 vs 对排端键孔两头对称一致', Math.abs(Math.abs(K.laneXMM(0, 0) - K.laneXMM(1, 1)) - Math.abs(K.laneXMM(1, 16) - K.laneXMM(0, 15))) < 1e-9);
+  ok('21 轨严格等槽栅（相邻格差 = p）', gridOk && Math.abs(K.laneXMM(1, 20) - K.laneXMM(1, 19) - P) < 1e-9);
+  var crossMin = Infinity;
+  for (var lu = 0; lu < K.LANES_PER_ROW; lu++) for (var ll = 0; ll < K.LANES_PER_ROW; ll++) {
+    var dk = Math.abs(K.laneXMM(1, lu) - K.laneXMM(0, ll));
+    if (dk < crossMin) crossMin = dk;
+  }
+  ok('跨排全部 21×21 轨对最小孔心距 = D（' + crossMin.toFixed(4) + '）≥ 4.0', Math.abs(crossMin - D) < 1e-9 && D >= 4.0);
+  var sameRowMin = Infinity;
+  for (var c1 = 0; c1 < K.LANES_PER_ROW; c1++) for (var c2 = c1 + 1; c2 < K.LANES_PER_ROW; c2++) {
+    var d2 = Math.abs(K.laneXMM(1, c1) - K.laneXMM(1, c2));
+    if (d2 < sameRowMin) sameRowMin = d2;
+  }
+  ok('同排任意两轨最小孔心距 = p（' + sameRowMin.toFixed(4) + '）≥ 4.0', Math.abs(sameRowMin - P) < 1e-9);
   near('孔 y：和弦 col0 = 15', K.holeYMM(0, 1, 5, 9), 15);
   near('孔 y：主旋律 col0（+105 站间）', K.holeYMM(0, 0, 5, 9), 120);
   near('孔 y：和弦 col4 = 24', K.holeYMM(4, 1, 5, 9), 24);
   near('带长 endCol=33', K.tapeLenMM(33), 15 + 33 / 4 * 9 + 105 + 15);
 
-  // ---- 4. 换挡调度（C4 → A3 档：从底档升 3 档；120BPM）----
+  // ---- 4. 混合换挡调度 ----
+  // 单音 C4：锚槽直达 42（3×14，纯整档零半音）→ C4 落 lane5
   var r1 = K.scheduleRow([{ col: 0, midi: 60 }], 0, {});
-  eq('单音 C4：升 3 档', r1.shifts.length, 3);
-  eq('升挡链 [-13,-9,-5]', r1.shifts.map(function (s) { return s.col; }).join(','), '-13,-9,-5');
-  eq('C4 落 lane5', r1.holes[3].lane, 5);
-  eq('C4 音高 60', r1.holes[3].midi, 60);
+  eq('单音 C4：3 整档零半音', r1.shifts.length + ',' + r1.halfShifts, '3,0');
+  eq('整档链 [-13,-9,-5]', r1.shifts.map(function (s) { return s.col; }).join(','), '-13,-9,-5');
+  eq('整档孔全在 ▶▶ 轨', r1.holes.filter(function (h) { return h.lane === 16; }).length, 3);
+  eq('C4 落 lane5', r1.holes[r1.holes.length - 1].lane, 5);
+  eq('C4 音高 60', r1.holes[r1.holes.length - 1].midi, 60);
+  eq('末锚槽 42', r1.finalS, 42);
   eq('换挡孔携带 serveCol', r1.holes[0].serveCol, 0);
 
+  // C5 → C6 → C5：4 整档 + 升 1 + 降 1，全整档（窗口一个八度足够宽）
   var r2 = K.scheduleRow([{ col: 0, midi: 72 }, { col: 32, midi: 84 }, { col: 64, midi: 72 }], 0, {});
-  eq('C5→C6→C5：6 次换挡（4+1+1）', r2.shifts.length, 6);
-  eq('C5 首音落 g4 lane5', r2.holes[4].lane, 5);
-  eq('C6 升挡链 [27]（窗口跨整八度，g4→g5 一按）', r2.shifts.slice(4, 5).map(function (s) { return s.col; }).join(','), '27');
-  eq('C6 落 g5 lane5', r2.holes[6].lane, 5);
-  eq('C6 音高 84', r2.holes[6].midi, 84);
-  eq('回程 ◀ 单按 59', r2.shifts.slice(5).map(function (s) { return s.col; }).join(','), '59');
+  eq('C5→C6→C5：6 整档零半音', r2.shifts.length + ',' + r2.halfShifts, '6,0');
+  eq('整档链 [-17,-13,-9,-5,27] + 回程 ◀ 59', r2.shifts.map(function (s) { return s.col; }).join(','), '-17,-13,-9,-5,27,59');
   eq('回程方向 -1', r2.shifts[5].dir, -1);
-  eq('末态 g4', r2.finalW, 4);
-  eq('末音 C5 落 g4 lane5', r2.holes[8].lane, 5);
+  eq('C5 落 lane5（s=56）', r2.holes[4].lane, 5);
+  eq('C6 落 lane5（s=70）', r2.holes[6].lane, 5);
+  eq('末锚槽 56', r2.finalS, 56);
   eq('全程零钳制', r2.clamped, 0);
 
-  var r3 = K.scheduleRow([{ col: 0, midi: 109 }], 0, {});
-  eq('C#8 超顶档窗口：钳制', r3.clamped, 1);
-  eq('钳到 g0 窗顶 A1(33)', r3.holes[r3.holes.length - 1].midi, 33);
-  var r3b = K.scheduleRow([{ col: 0, midi: 97 }], 0, {});
-  eq('C#7 在 A6 档窗内：6 按升挡不钳制', r3b.clamped === 0 && r3b.shifts.length === 6 && r3b.holes[r3b.holes.length - 1].midi === 97, true);
-  eq('低音 G#0 超底界：钳制', K.scheduleRow([{ col: 0, midi: 20 }], 0, {}).clamped, 1);
+  // G#2：1 整档到锚槽 14（G#2 恰在窗内 lane14）
+  var r3 = K.scheduleRow([{ col: 0, midi: 44 }], 0, {});
+  eq('G#2：1 整档零半音', r3.shifts.length + ',' + r3.halfShifts, '1,0');
+  eq('G#2 落 lane14（s=14）', r3.holes[r3.holes.length - 1].lane, 14);
+  // 越出机械止点 → 钳制到当前窗口最近真实键
+  var r3b = K.scheduleRow([{ col: 0, midi: 109 }], 0, {});
+  eq('C#8 超顶止点：钳制', r3b.clamped, 1);
+  eq('钳到窗顶 A1(33)', r3b.holes[r3b.holes.length - 1].midi, 33);
+  var r3d = K.scheduleRow([{ col: 0, midi: 20 }], 0, {});
+  eq('G#0 低于底止点：钳制', r3d.clamped, 1);
+  eq('钳到窗底 A0(21)', r3d.holes[r3d.holes.length - 1].midi, 21);
+  var r3c = K.scheduleRow([{ col: 0, midi: 97 }], 0, {});
+  eq('C#7 在可达域：6 整档不钳制', r3c.clamped + ':' + r3c.shifts.length, '0:6');
+  eq('C#7 落 lane6（s=84）', r3c.holes[r3c.holes.length - 1].lane, 6);
   var r4 = K.scheduleRow([{ col: 0, midi: 60 }, { col: 0, midi: 84 }], 0, {});
   eq('同拍 C4+C6：换挡来不及钳制', r4.clamped, 1);
-  eq('同拍 C4：仅首音升挡 3 孔', r4.shifts.length, 3);
-  eq('C6 钳到 g3 窗顶 A4(69)', r4.holes[r4.holes.length - 1].midi, 69);
+  eq('同拍 C4：仅首音 3 整档', r4.shifts.length, 3);
+  eq('C6 钳到窗顶 A4(69)', r4.holes[r4.holes.length - 1].midi, 69);
 
-  // ---- 4b. 跨排救援：本排换挡来不及的钳制音，移到恰在该档的另一排击发 ----
-  // 首音空出 10 拍给两排升挡链留位（home:false 无归位顺延）
-  var midiR = {
-    ticksPerBeat: 480,
-    tracks: [
-      { name: 'mel', channels: [0], notes: [
-        { tick: 4800, note: 60, channel: 0 },
-        { tick: 4800, note: 84, channel: 0 } // C6 同拍：本排从 g3 升 2 档来不及被钳制
-      ] },
-      { name: 'chd', channels: [0], notes: [
-        { tick: 4800, note: 84, channel: 0 } // 和弦排已在 g5（C6 在窗内）
-      ] }
-    ],
-    tempos: []
-  };
-  var cvR = K.convertFromMidi(midiR, { melodyTracks: new Set([0]), chordTracks: new Set([1]), home: false });
-  eq('跨排救援：C6 移排后零钳制', cvR.report.clamped, 0);
-  eq('跨排救援：rescued = 1', cvR.report.rescued, 1);
-  eq('跨排救援：主旋律排无 C6 孔', cvR.holes.filter(function (h) { return h.row === 0 && h.midi === 84; }).length, 0);
-  var r1c6 = cvR.holes.filter(function (h) { return h.row === 1 && h.midi === 84; });
-  eq('跨排救援：和弦排 C6 落 g5 lane5（救援孔与原孔去重合一）', r1c6.length + ':' + (r1c6[0] ? r1c6[0].lane : 'x'), '1:5');
-  var tlR = K.buildShiftTimeline(cvR.holes);
-  var badR = cvR.holes.filter(function (h) {
-    return !K.isShiftLane(h.lane) && K.soundingMidi(h.lane, K.shiftAt(tlR, h.row, (h.col + 0.5) / 4)) !== h.midi;
-  }).length;
-  eq('跨排救援：实时音高逐孔等于烘焙', badR, 0);
-  var midiR2 = {
-    ticksPerBeat: 480,
-    tracks: [
-      { name: 'mel', channels: [0], notes: [
-        { tick: 4800, note: 60, channel: 0 },
-        { tick: 4800, note: 84, channel: 0 }
-      ] },
-      { name: 'chd', channels: [0], notes: [
-        { tick: 4800, note: 60, channel: 0 } // 和弦排在 g3，C6 不在窗内 → 救援失败
-      ] }
-    ],
-    tempos: []
-  };
-  var cvR2 = K.convertFromMidi(midiR2, { melodyTracks: new Set([0]), chordTracks: new Set([1]), home: false });
-  eq('跨排救援：另一排窗内无此音 → 维持钳制', cvR2.report.clamped + ':' + cvR2.report.rescued, '1:0');
+  // 半音级进（C4→C#4→D4→D#4→E4）：全在窗口 [42,56] 内，零换挡
+  var r5 = K.scheduleRow([
+    { col: 0, midi: 60 }, { col: 4, midi: 61 }, { col: 5, midi: 62 }, { col: 6, midi: 63 }, { col: 7, midi: 64 }
+  ], 0, {});
+  eq('半音级进（窗内）：零换挡', r5.shifts.length + ',' + r5.halfShifts, '3,0');
+  eq('级进落轨 lane 5,6,7,8,9', r5.holes.filter(function (h) { return h.midi !== null; }).map(function (h) { return h.lane; }).join(','), '5,6,7,8,9');
 
-  // ---- 5. 播放挡位模型（换挡 400ms 到位；到位前按旧挡击发）----
-  eq('isShiftLane(0/16)', K.isShiftLane(0) && K.isShiftLane(16) && !K.isShiftLane(15), true);
+  // 半音键：A#4/B4 各越窗 +1（+1a/+1b 交替），C5 大跳用整档（按压数最少）
+  var r5b = K.scheduleRow([{ col: 0, midi: 60 }, { col: 4, midi: 70 }, { col: 5, midi: 71 }, { col: 6, midi: 72 }], 0, {});
+  eq('半音键：2 个 +1（a/b 交替）', r5b.halfShifts, 2);
+  eq('半音孔列/轨 [3,+1a] [4,+1b]', r5b.holes.filter(function (h) { return K.isHalfLane(h.lane); }).map(function (h) { return h.col + ':' + h.lane; }).join(','), '3:19,4:20');
+  eq('半音孔可与上一音同列（A#4@4 与 +1b@4）', r5b.holes.filter(function (h) { return h.col === 4 && h.midi !== null; }).length, 1);
+  eq('A#4 落窗顶 lane15（s=43）', r5b.holes.filter(function (h) { return h.col === 4 && h.midi === 70; })[0].lane, 15);
+  eq('B4 落窗顶 lane15（s=44）', r5b.holes.filter(function (h) { return h.col === 5 && h.midi === 71; })[0].lane, 15);
+  eq('C5 越窗 2 格改用整档（4 整档含链尾 col2）', r5b.shifts.length + ':' + r5b.shifts[3].col, '4:2');
+  eq('C5 落 lane3（s=58）', r5b.holes.filter(function (h) { return h.col === 6 && h.midi === 72; })[0].lane, 3);
+  eq('末锚槽 58', r5b.finalS, 58);
+  eq('半音键测试零钳制', r5b.clamped, 0);
+
+  // ---- 5. 播放位置模型（整档 400ms 到位；半音瞬时；交错不早退）----
   var tl2 = K.buildShiftTimeline(r2.holes);
-  eq('时间线：下排 6 次换挡', tl2[0].length, 6);
-  eq('C5 首音击发时已到 g4', K.shiftAt(tl2, 0, 0), 4);
-  eq('C6 击发时已到 g5', K.shiftAt(tl2, 0, 8.125), 5);
-  eq('回 C5 时已回 g4', K.shiftAt(tl2, 0, 16.125), 4);
-  var bad5 = r2.holes.filter(function (h) {
-    return !K.isShiftLane(h.lane) && K.soundingMidi(h.lane, K.shiftAt(tl2, 0, (h.col + 0.5) / 4)) !== h.midi;
+  eq('时间线：下排 6 整档', tl2[0].length, 6);
+  eq('C5 首音击发时已到 s=56', K.shiftAt(tl2, 0, 0.125), 56);
+  eq('C6 击发时已到 s=70', K.shiftAt(tl2, 0, 8.125), 70);
+  eq('回 C5 时已回 s=56', K.shiftAt(tl2, 0, 16.125), 56);
+  var tl5b = K.buildShiftTimeline(r5b.holes);
+  var bad5b = r5b.holes.filter(function (h) {
+    return !K.isShiftLane(h.lane) && K.soundingMidi(h.lane, K.shiftAt(tl5b, 0, (h.col + 0.5) / 4)) !== h.midi;
   }).length;
-  eq('实时音高逐孔等于烘焙', bad5, 0);
+  eq('整档/半音交错时序：实时音高逐孔等于烘焙', bad5b, 0);
+  eq('半音事件标记 half=true', tl5b[0].filter(function (e) { return e.half; }).length, 2);
 
   // ---- 6. 换挡提前量随速度折算（60BPM）----
   var r6 = K.scheduleRow([{ col: 0, midi: 60 }], 0, { bpm: 60 });
-  eq('60BPM 首音升挡链 [-7,-5,-3]', r6.shifts.map(function (s) { return s.col; }).join(','), '-7,-5,-3');
+  eq('60BPM 首音整档链 [-7,-5,-3]', r6.shifts.map(function (s) { return s.col; }).join(','), '-7,-5,-3');
 
-  // ---- 7. 曲首强制归位：连按 3 次 ◀ 钉底 A0 ----
+  // ---- 7. 曲首强制归位：连按 7 次 ◀◀ 钉底 A0 ----
   var rH = K.scheduleRow([{ col: 0, midi: 60 }], 0, { home: true });
-  eq('归位：3 孔 ◀', rH.home, 3);
+  eq('归位：7 孔 ◀', rH.home, 7);
   eq('归位：homeOk（归位+升挡链赶在首音前）', rH.homeOk, true);
-  eq('归位孔列 [-52,-48,-44]', rH.holes.filter(function (h) { return h.lane === 0; }).map(function (h) { return h.col; }).join(','), '-52,-48,-44');
+  eq('归位孔列 [-52,-48,-44,-40,-36,-32,-28]', rH.holes.filter(function (h) { return h.lane === 0; }).map(function (h) { return h.col; }).join(','), '-52,-48,-44,-40,-36,-32,-28');
   eq('归位孔不计入换挡统计', rH.shifts.length, 3);
   var rH0 = K.scheduleRow([{ col: 0, midi: 24 }], 0, { home: true });
-  eq('首音在底档：归位后无需升挡', rH0.shifts.length, 0);
-  eq('首音在底档：归位孔照放（钉底）', rH0.home, 3);
+  eq('首音在初始窗内：归位后无需升挡', rH0.shifts.length + ',' + rH0.halfShifts, '0,0');
+  eq('首音在初始窗内：归位孔照放（钉底）', rH0.home, 7);
   var rH2 = K.scheduleRow([{ col: 0, midi: 72 }], 1, { home: true });
-  eq('和弦排归位+4 按升挡链放不下：homeOk=false', rH2.homeOk, false);
+  eq('和弦排归位+4 整档链放不下：homeOk=false', rH2.homeOk, false);
   eq('homeOk=false 时不放归位孔（顺延后重试）', rH2.home, 0);
 
-  // ---- 8. 端到端（归位默认开启；和弦排顺延 5 拍）----
-  // 主旋律 C5 → g4（4 按升挡）+ C6 → g5（1 按）= 5 次换挡；和弦 C4/E4/G4 同落在 A3 档窗
-  // （N=8 窗口跨整八度，同拍三和弦全部同窗击发，零钳制）
+  // ---- 8. 端到端（归位默认开启；顺延 9 拍）----
   var midi = {
     ticksPerBeat: 480,
     tracks: [
@@ -255,22 +246,18 @@
     tempos: []
   };
   var cv = K.convertFromMidi(midi, { melodyTracks: new Set([0]), chordTracks: new Set([1]) });
-  eq('端到端：孔数 19（主 10 + 和 9）', cv.holes.length, 19);
-  eq('端到端：归位顺延 5 拍', cv.report.homeDelay, 5);
-  eq('端到端：归位孔两排各 3', cv.report.homing.join(','), '3,3');
-  eq('端到端：下排换挡 5 次（g4+g5）', cv.report.shifts[0], 5);
-  eq('端到端：上排换挡 3 次（g3）', cv.report.shifts[1], 3);
-  eq('端到端：零钳制（同拍三和弦同窗）', cv.report.clamped, 0);
-  eq('端到端：主旋律排归位孔列 [-52,-48,-44]', cv.holes.filter(function (h) { return h.row === 0 && h.lane === 0; }).map(function (h) { return h.col; }).join(','), '-52,-48,-44');
-  eq('端到端：和弦排归位孔列 [-5,-1,3]', cv.holes.filter(function (h) { return h.row === 1 && h.lane === 0; }).map(function (h) { return h.col; }).join(','), '-5,-1,3');
-  eq('端到端：主旋律升挡链 [3,7,11,15,47]', cv.holes.filter(function (h) { return h.row === 0 && h.lane === 16; }).map(function (h) { return h.col; }).join(','), '3,7,11,15,47');
-  eq('端到端：和弦排升挡链 [7,11,15]', cv.holes.filter(function (h) { return h.row === 1 && h.lane === 16; }).map(function (h) { return h.col; }).join(','), '7,11,15');
-  var melCol20 = cv.holes.filter(function (h) { return h.row === 0 && h.col === 20; });
-  var chdCol20 = cv.holes.filter(function (h) { return h.row === 1 && h.col === 20; });
-  eq('端到端：顺延后首音列 col20 旋律一孔（C5 落 g4 lane5）', melCol20.length + ':' + melCol20[0].lane, '1:5');
-  eq('端到端：和弦 col20 三孔（C4/E4/G4 同窗 g3 lane5/9/13）', chdCol20.map(function (h) { return h.lane; }).sort(function (a, b) { return a - b; }).join(','), '5,9,13');
-  near('端到端：站间错位 105mm', K.holeYMM(20, 0, 5, 9) - K.holeYMM(20, 1, 5, 9), 105);
-  eq('端到端：endCol=53', cv.endCol, 53);
+  eq('端到端：孔数 27（归位 14 + 整档 8 + 音 5）', cv.holes.length, 27);
+  eq('端到端：归位顺延 9 拍', cv.report.homeDelay, 9);
+  eq('端到端：归位孔两排各 7', cv.report.homing.join(','), '7,7');
+  eq('端到端：换挡 整 5/3 · 半 0/0', cv.report.shifts.join(',') + ' · ' + cv.report.halfShifts.join(','), '5,3 · 0,0');
+  eq('端到端：零钳制零救援', cv.report.clamped + ',' + cv.report.rescued, '0,0');
+  eq('端到端：主旋律排归位孔列 [-52,-48,-44,-40,-36,-32,-28]', cv.holes.filter(function (h) { return h.row === 0 && h.lane === 0; }).map(function (h) { return h.col; }).join(','), '-52,-48,-44,-40,-36,-32,-28');
+  eq('端到端：和弦排归位孔列 [-5,-1,3,7,11,15,19]', cv.holes.filter(function (h) { return h.row === 1 && h.lane === 0; }).map(function (h) { return h.col; }).join(','), '-5,-1,3,7,11,15,19');
+  eq('端到端：主旋律整档链 [19,23,27,31,63]', cv.holes.filter(function (h) { return h.row === 0 && h.lane === 16; }).map(function (h) { return h.col; }).join(','), '19,23,27,31,63');
+  eq('端到端：和弦排整档链 [23,27,31]', cv.holes.filter(function (h) { return h.row === 1 && h.lane === 16; }).map(function (h) { return h.col; }).join(','), '23,27,31');
+  var cvCol36 = cv.holes.filter(function (h) { return h.col === 36; });
+  eq('端到端：顺延后首音列 col36 旋律 C5 lane5 + 和弦 3 孔 lane 5/9/13', cvCol36.map(function (h) { return h.row + ':' + h.lane; }).join(','), '0:5,1:5,1:9,1:13');
+  eq('端到端：endCol=69', cv.endCol, 69);
   eq('端到端：稀疏曲不拉长 mmPerBeat=9', cv.mmPerBeat, 9);
   var tlE = K.buildShiftTimeline(cv.holes);
   var badE = cv.holes.filter(function (h) {
@@ -287,7 +274,7 @@
     tracks: [{ name: 'm', channels: [0], notes: [
       { tick: 0, note: 60, channel: 0 },
       { tick: 120, note: 60, channel: 0 },
-      { tick: 0, note: 84, channel: 0 } // C6 同拍：升挡来不及被钳制
+      { tick: 0, note: 84, channel: 0 } // C6 同拍：2 整档来不及被钳制
     ] }],
     tempos: []
   };
@@ -295,9 +282,7 @@
   near('最密 1 列：拉长倍率 16/9', cvGap.report.scale, 16 / 9);
   eq('最密 1 列：mmPerBeat=16', cvGap.mmPerBeat, 16);
   eq('最密 1 列：音符零后移', cvGap.report.pushedNotes, 0);
-  eq('最密 1 列：C6 升挡来不及被钳制', cvGap.report.clamped, 1);
-  var cols9 = cvGap.holes.filter(function (h) { return h.row === 0 && h.lane === 5; }).map(function (h) { return h.col; }).sort(function (a, b) { return a - b; });
-  eq('最密 1 列：同轨孔列原位 [0,1]（C4 落 g3 lane5）', cols9.join(','), '0,1');
+  eq('最密 1 列：C6 换挡来不及被钳制', cvGap.report.clamped, 1);
   eq('最密 1 列：钳制落窗顶 A4(69) lane15', cvGap.holes.filter(function (h) { return h.lane === 15; }).map(function (h) { return h.midi; }).join(','), '69');
   near('拉长后带长按 16mm/拍计', K.tapeLenMM(cvGap.endCol, cvGap.mmPerBeat), 15 + cvGap.endCol / 4 * 16 + 105 + 15);
 
@@ -306,14 +291,14 @@
     ticksPerBeat: 480,
     tracks: [{ name: 'm', channels: [0], notes: [
       { tick: 0, note: 60, channel: 0 },
-      { tick: 240, note: 61, channel: 0 } // 半拍 = 2 列 = 4.5mm ≥ 4.0；C#4 同档
+      { tick: 240, note: 61, channel: 0 } // 半拍 = 2 列；C#4 同窗
     ] }],
     tempos: []
   };
   var cvHalf = K.convertFromMidi(midiHalf, { melodyTracks: new Set([0]), chordTracks: new Set() });
   eq('半拍间隔：不拉长 scale=1', cvHalf.report.scale, 1);
-  eq('半拍间隔：C#4 同档（g3）无需换挡（仅初始 3 按）', cvHalf.report.shifts[0], 3);
-  eq('半拍间隔：C#4 落 g3 lane6', cvHalf.holes.filter(function (h) { return h.col === 2; }).map(function (h) { return h.lane; }).join(','), '6');
+  eq('半拍间隔：C#4 同窗零换挡（仅初始 3 整档）', cvHalf.report.shifts[0] + ',' + cvHalf.report.halfShifts[0], '3,0');
+  eq('半拍间隔：C#4 落 lane6', cvHalf.holes.filter(function (h) { return h.col === 2; }).map(function (h) { return h.lane; }).join(','), '6');
   var midiChd = {
     ticksPerBeat: 480,
     tracks: [{ name: 'm', channels: [0], notes: [
@@ -325,7 +310,7 @@
   };
   var cvChd = K.convertFromMidi(midiChd, { melodyTracks: new Set([0]), chordTracks: new Set() });
   eq('同拍和弦（col 差 0）不触发拉长', cvChd.report.scale, 1);
-  eq('同拍三和弦：C4/E4/G4 同窗 g3 lane5/9/13 零钳制', cvChd.report.clamped + ':' + cvChd.holes.filter(function (h) { return h.col === 0; }).map(function (h) { return h.lane; }).join(','), '0:5,9,13');
+  eq('同拍三和弦：整组同窗击发（组感知目标锚槽 42，lane 5/9/13 零钳制）', cvChd.report.clamped + ':' + cvChd.holes.filter(function (h) { return h.col === 0 && h.midi !== null; }).map(function (h) { return h.lane; }).join(','), '0:5,9,13');
 
   // ---- 10. 同拍同轨去重（home:false）----
   var midiDup = {
@@ -337,23 +322,21 @@
     tempos: []
   };
   var cvDup = K.convertFromMidi(midiDup, { melodyTracks: new Set([0]), chordTracks: new Set(), home: false });
-  eq('同拍同轨去重 → 4 孔（3 升挡 + C4）', cvDup.holes.length, 4);
+  eq('同拍同轨去重 → 4 孔（3 整档 + C4）', cvDup.holes.length, 4);
 
   // ---- 10b. 最密拉长与换挡边界：密集 B5 全部保留 ----
-  // 10 个 B5(g5 lane3) 每列一音（最密 1 列 → 拉长 ×16/9 归位顺延 1 拍），
-  // 首音 5 按升挡链 [-17,-13,-9,-5,-1]，col20 的 C6 同窗 g5→g6?（C6 在 g5 窗内）仅需原位
   var denseNotes = [];
   for (var dc = 0; dc < 10; dc++) denseNotes.push({ tick: dc * 120, note: 83, channel: 0 });
   denseNotes.push({ tick: 1920, note: 84, channel: 0 });
   var midiDense = { ticksPerBeat: 480, tracks: [{ name: 'm', notes: denseNotes }], tempos: [] };
   var cvDense = K.convertFromMidi(midiDense, { melodyTracks: new Set([0]), chordTracks: new Set() });
   near('拉长换挡边界：整曲拉长 16/9', cvDense.report.scale, 16 / 9);
-  eq('拉长换挡边界：归位顺延 1 拍', cvDense.report.homeDelay, 1);
-  eq('拉长换挡边界：归位孔列 [-29,-25,-21]', cvDense.holes.filter(function (h) { return h.row === 0 && h.lane === 0; }).map(function (h) { return h.col; }).join(','), '-29,-25,-21');
-  eq('拉长换挡边界：升挡链 [-17,-13,-9,-5,-1]', cvDense.holes.filter(function (h) { return h.row === 0 && h.lane === 16; }).map(function (h) { return h.col; }).join(','), '-17,-13,-9,-5,-1');
+  eq('拉长换挡边界：归位顺延 5 拍', cvDense.report.homeDelay, 5);
+  eq('拉长换挡边界：归位孔列 [-29,-25,-21,-17,-13,-9,-5]', cvDense.holes.filter(function (h) { return h.row === 0 && h.lane === 0; }).map(function (h) { return h.col; }).join(','), '-29,-25,-21,-17,-13,-9,-5');
+  eq('拉长换挡边界：整档链 [-1,3,7,11,15]', cvDense.holes.filter(function (h) { return h.row === 0 && h.lane === 16; }).map(function (h) { return h.col; }).join(','), '-1,3,7,11,15');
   eq('拉长换挡边界：零后移零舍弃', cvDense.report.pushedNotes + cvDense.report.dropped, 0);
-  var dense13 = cvDense.holes.filter(function (h) { return h.row === 0 && h.lane === 3; }).map(function (h) { return h.col; });
-  eq('密集 B5 全部保留（顺延 1 拍后 [4..13]）', dense13.join(','), '4,5,6,7,8,9,10,11,12,13');
+  var dense3 = cvDense.holes.filter(function (h) { return h.row === 0 && h.lane === 3; }).map(function (h) { return h.col; });
+  eq('密集 B5 全部保留（lane3 列 [20..29]）', dense3.join(','), '20,21,22,23,24,25,26,27,28,29');
   eq('拉长换挡边界：零钳制', cvDense.report.clamped, 0);
   var tlDense = K.buildShiftTimeline(cvDense.holes);
   var badDense = cvDense.holes.filter(function (h) {
@@ -366,14 +349,55 @@
   var minPairD = minPairDist(cvDense.holes, cvDense.mmPerBeat);
   ok('拉长换挡边界：全部孔对孔心距 ≥4.0mm（最小 ' + minPairD.toFixed(3) + '）', minPairD >= 4.0 - 1e-6);
 
-  // ---- 11. 空转换 ----
+  // ---- 11. 跨排救援：本排换挡来不及的钳制音，移到恰在该档的另一排击发 ----
+  var midiR = {
+    ticksPerBeat: 480,
+    tracks: [
+      { name: 'mel', channels: [0], notes: [
+        { tick: 4800, note: 60, channel: 0 },
+        { tick: 4800, note: 84, channel: 0 } // C6 同拍：本排 +2 整档来不及被钳制
+      ] },
+      { name: 'chd', channels: [0], notes: [
+        { tick: 4800, note: 84, channel: 0 } // 和弦排已到 s=70（C6 在窗内）
+      ] }
+    ],
+    tempos: []
+  };
+  var cvR = K.convertFromMidi(midiR, { melodyTracks: new Set([0]), chordTracks: new Set([1]), home: false });
+  eq('跨排救援：C6 移排后零钳制', cvR.report.clamped, 0);
+  eq('跨排救援：rescued = 1', cvR.report.rescued, 1);
+  eq('跨排救援：主旋律排无 C6 孔', cvR.holes.filter(function (h) { return h.row === 0 && h.midi === 84; }).length, 0);
+  var r1c6 = cvR.holes.filter(function (h) { return h.row === 1 && h.midi === 84; });
+  eq('跨排救援：和弦排 C6 落 s=70 lane5（救援孔与原孔去重合一）', r1c6.length + ':' + (r1c6[0] ? r1c6[0].lane : 'x'), '1:5');
+  var tlR = K.buildShiftTimeline(cvR.holes);
+  var badR = cvR.holes.filter(function (h) {
+    return !K.isShiftLane(h.lane) && K.soundingMidi(h.lane, K.shiftAt(tlR, h.row, (h.col + 0.5) / 4)) !== h.midi;
+  }).length;
+  eq('跨排救援：实时音高逐孔等于烘焙', badR, 0);
+  var midiR2 = {
+    ticksPerBeat: 480,
+    tracks: [
+      { name: 'mel', channels: [0], notes: [
+        { tick: 4800, note: 60, channel: 0 },
+        { tick: 4800, note: 84, channel: 0 }
+      ] },
+      { name: 'chd', channels: [0], notes: [
+        { tick: 4800, note: 60, channel: 0 } // 和弦排在 s=42，C6 不在窗内 → 救援失败
+      ] }
+    ],
+    tempos: []
+  };
+  var cvR2 = K.convertFromMidi(midiR2, { melodyTracks: new Set([0]), chordTracks: new Set([1]), home: false });
+  eq('跨排救援：另一排窗内无此音 → 维持钳制', cvR2.report.clamped + ':' + cvR2.report.rescued, '1:0');
+
+  // ---- 12. 空转换 ----
   var cvEmpty = K.convertFromMidi(midi, { melodyTracks: new Set(), chordTracks: new Set() });
   eq('空选择返回 empty', cvEmpty.report.empty, true);
 
-  // ---- 12. 示例曲（小星星 D 大调：旋律落 A4/A5 档，和弦落 A4 档；两排曲首各 4 次升挡）----
+  // ---- 13. 示例曲（小星星 D 大调：混合换挡 整 6/4 + 半 2/2）----
   var demo = K.demoSong();
-  eq('示例曲：孔数 45', demo.holes.length, 45);
-  eq('示例曲：两排换挡 6/4', demo.shifts.join(','), '6,4');
+  eq('示例曲：孔数 47', demo.holes.length, 47);
+  eq('示例曲：整档 6/4', demo.shifts.join(','), '6,4');
   eq('示例曲：endCol = 65', demo.endCol, 65);
   var lanesOk = true, midiOk = true;
   demo.holes.forEach(function (h) {
@@ -383,9 +407,10 @@
   });
   ok('示例曲：音符孔轨位全在 1..15', lanesOk);
   ok('示例曲：音高全为 C#5..B5', midiOk);
-  eq('示例曲：下排升挡链 [-1,2,5,8,24]', demo.holes.filter(function (h) { return h.row === 0 && h.lane === 16; }).map(function (h) { return h.col; }).join(','), '-1,2,5,8,24');
-  eq('示例曲：下排回程 ◀ 36', demo.holes.filter(function (h) { return h.row === 0 && h.lane === 0; }).map(function (h) { return h.col; }).join(','), '36');
-  eq('示例曲：上排升挡链 [-1,2,5,8]', demo.holes.filter(function (h) { return h.row === 1 && h.lane === 16; }).map(function (h) { return h.col; }).join(','), '-1,2,5,8');
+  eq('示例曲：下排整档链 [-1,2,5,8,24] + 回程 ◀ 36', demo.holes.filter(function (h) { return h.row === 0 && h.lane === 16; }).map(function (h) { return h.col; }).join(',') + '+' + demo.holes.filter(function (h) { return h.row === 0 && h.lane === 0; }).map(function (h) { return h.col; }).join(','), '-1,2,5,8,24+36');
+  eq('示例曲：下排无半音孔（B5 用整档 +1）', demo.holes.filter(function (h) { return h.row === 0 && K.isHalfLane(h.lane); }).length, 0);
+  eq('示例曲：上排半音孔 [18,+1a] [19,+1b]', demo.holes.filter(function (h) { return h.row === 1 && K.isHalfLane(h.lane); }).map(function (h) { return h.col + ':' + h.lane; }).join(','), '18:19,19:20');
+  eq('示例曲：B5 落 lane3（s=70）', demo.holes.filter(function (h) { return h.row === 0 && h.midi === 83; })[0].lane, 3);
   var tlDemo = K.buildShiftTimeline(demo.holes, 100);
   var badDemo = demo.holes.filter(function (h) {
     return !K.isShiftLane(h.lane) &&
@@ -395,7 +420,7 @@
   var minPairDemo = minPairDist(demo.holes, 9);
   ok('示例曲：全部孔对孔心距 ≥4.0mm（最小 ' + minPairDemo.toFixed(3) + '）', minPairDemo >= 4.0 - 1e-6);
 
-  // ---- 13. 变速 tempo map ----
+  // ---- 14. 变速 tempo map ----
   var tm = K.makeTempoMap([{ tick: 0, usPerQuarter: 500000 }, { tick: 960, usPerQuarter: 250000 }], 480);
   eq('tempo map 段数', tm.count, 2);
   near('beat0 → 0s', tm.beatToTime(0), 0);
@@ -404,7 +429,7 @@
   near('timeToBeat 反演', tm.timeToBeat(1.25), 3);
   eq('无 tempo 事件 → null', K.makeTempoMap([], 480), null);
 
-  // ---- 14. 打孔机任务生成（上位机 ↔ 固件协议层）----
+  // ---- 15. 打孔机任务生成（上位机 ↔ 固件协议层）----
   var PS = window.Punch;
   eq('打孔：常量 X 当量 339.53', Math.round(PS.FW.X_PMM * 100) / 100, 339.53);
   eq('打孔：常量 Y 当量 388.03', Math.round(PS.FW.Y_PMM * 100) / 100, 388.03);
@@ -414,9 +439,8 @@
     { col: 0, row: 0, lane: 1 },
     { col: 4, row: 1, lane: 2 }
   ], 9);
-  // 机器 x = holeYMM：row1 col0=15、row0 col0=120（+105 站间）、row1 col4=24
+  // 机器 x = holeYMM：row1 col0=15、row1 col4=24、row0 col0=120（+105 站间）
   eq('打孔：x 主序（走带方向）排列', pt.map(function (t) { return t.x; }).join(','), '15,24,120');
-  // 机器 y = laneXMM（下排含 D 右移）
   eq('打孔：y 为带宽方向坐标', pt[0].y + ',' + pt[1].y + ',' + pt[2].y,
     K.laneXMM(1, 1) + ',' + K.laneXMM(1, 2) + ',' + K.laneXMM(0, 1));
   var pt2 = PS.buildTask([
@@ -426,8 +450,12 @@
   eq('打孔：同 x 按 y 升序（先低后高）', pt2.map(function (t) { return t.y; }).join(','), K.laneXMM(1, 1) + ',' + K.laneXMM(1, 3));
   var pt3 = PS.buildTask([{ col: 4, row: 0, lane: 1 }], 16);
   near('打孔：拉长曲按 16mm/拍换算 x', pt3[0].x, 15 + 16 + 105);
+  // 半音孔 lane 17..20 的坐标与排序（+1a 与 −1a 同列：x 相同按 y 升序）
+  var ptH = PS.buildTask([{ col: 4, row: 0, lane: 19 }, { col: 4, row: 0, lane: 17 }, { col: 4, row: 1, lane: 18 }], 9);
+  eq('打孔：半音孔 x（row1 前于 row0）', ptH.map(function (t) { return t.x; }).join(','), '24,129,129');
+  eq('打孔：半音孔 y 升序（−1b 上排 / −1a / +1a 下排）', ptH.map(function (t) { return t.y.toFixed(4); }).join(','), '11.6199,24.5536,179.7577');
   var pt4 = PS.buildTask([{ col: 0, row: 0, lane: 16 }, { col: 0, row: 0, lane: 0 }], 9);
-  eq('打孔：含换挡键孔 lane0/16（y 升序）', pt4.map(function (t) { return t.y; }).join(','), K.laneXMM(0, 0) + ',' + K.laneXMM(0, 16));
+  eq('打孔：整档孔 lane0/16（y 升序）', pt4.map(function (t) { return t.y; }).join(','), K.laneXMM(0, 0) + ',' + K.laneXMM(0, 16));
   var pt5 = PS.buildTask([{ col: -5, row: 1, lane: 0 }], 9);
   near('打孔：归位孔负列 x=3.75（头部留白内）', pt5[0].x, 3.75);
   eq('打孔：归位孔 y = 上排 ◀◀ 轨', pt5[0].y, K.laneXMM(1, 0));
