@@ -5,10 +5,10 @@ import os
 import win32com.client as wc
 
 DRW_TPL = r"C:\ProgramData\SolidWorks\SOLIDWORKS 2026\templates\gb_a3.drwdot"
-PART = r"C:\d_pan\wokspace\play\cad\roller_d40x2_4bumps.SLDPRT"
+PART = r"C:\d_pan\wokspace\play\cad\roller_d40x1p5_h15.SLDPRT"
 OUT_DIR = r"C:\d_pan\wokspace\play\cad"
-DRW = os.path.join(OUT_DIR, "roller_d40x2_4bumps_views.SLDDRW")
-PDF = os.path.join(OUT_DIR, "roller_d40x2_4bumps_views.pdf")
+DRW = os.path.join(OUT_DIR, "roller_d40x1p5_h15_views.SLDDRW")
+PDF = os.path.join(OUT_DIR, "roller_d40x1p5_h15_views.pdf")
 
 assert os.path.exists(DRW_TPL), "NO_DRW_TEMPLATE"
 assert os.path.exists(PART), "NO_PART"
