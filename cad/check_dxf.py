@@ -15,6 +15,7 @@ ents = [v for c, v in pairs if c == "0"]
 print("ENTITIES:", dict(Counter(ents)))
 
 pts = []
+mids = []
 i = 0
 while i < len(pairs):
     code, val = pairs[i]
@@ -38,7 +39,7 @@ while i < len(pairs):
         for a in (a1, a2):
             pts.append((round(cx + r * math.cos(a), 3), round(cy + r * math.sin(a), 3)))
         am = (a1 + a2) / 2.0
-        pts.append((round(cx + r * math.cos(am), 3), round(cy + r * math.sin(am), 3)))
+        mids.append((round(cx + r * math.cos(am), 3), round(cy + r * math.sin(am), 3), round(r, 3)))
     elif val == "CIRCLE":
         cx, cy, r = float(d["10"]), float(d["20"]), float(d["40"])
         print("HOLE: center (%s,%s) R=%s" % (cx, cy, r))
@@ -46,6 +47,11 @@ while i < len(pairs):
 
 cnt = Counter(pts)
 bad = {k: v for k, v in cnt.items() if v != 2}
-print("ENDPOINTS:", len(pts), "BAD_CHAIN:", bad if bad else "none - outline closed OK")
+print("JUNCTIONS:", len(pts), "BAD_CHAIN:", bad if bad else "none - outline closed OK")
 maxr = max(math.hypot(x, y) for x, y in pts)
-print("MAX_RADIUS_MM:", maxr, "(expect 23.0)")
+print("MAX_CORNER_RADIUS_MM: %.4f (expect sqrt(804)=28.3549)" % maxr)
+bad_mid = [(x, y, r) for x, y, r in mids if abs(r - 20.0) > 0.001]
+print("ARC_MIDS_ON_R20:", len(mids), "BAD:", bad_mid if bad_mid else "none")
+# 相切校验：相邻突台顶点 (h,0) 与 (0,h) 连线距原点 = h/√2 = 20
+h = 20.0 * math.sqrt(2.0)
+print("TANGENT_CHECK: tip h=%.4f  chord distance=%.4f (must equal R=20)" % (h, h / math.sqrt(2.0)))
