@@ -63,11 +63,6 @@
 
   var PC_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   function midiName(m) { return PC_NAMES[((m % 12) + 12) % 12] + Math.floor(m / 12 - 1); }
-  // 换挡孔描边色：降向（◀◀/−1a/−1b）红、升向（▶▶/+1a/+1b）绿
-  function shiftHoleColor(lane) {
-    var up = lane === 16 || lane === 19 || lane === 20;
-    return up ? '#4d9a6c' : '#c9563a';
-  }
 
   // ---------------- 孔位查找 / 编辑 ----------------
   function holeCmp(a, b) { return a.col - b.col || a.row - b.row || a.lane - b.lane; }
@@ -317,10 +312,10 @@
         ctx2d.beginPath(); ctx2d.arc(hx, hy, rHole, 0, 6.2832);
         ctx2d.fillStyle = shiftHole ? '#e8e8e8' : (h.row === 0 ? '#d95f2e' : '#2fa89c'); ctx2d.fill();
       } else if (shiftHole) {
-        // 换挡键孔：空心描边圆（降向 ◀◀/−1 红 / 升向 ▶▶/+1 绿），填充纸带底色以呈现空心
+        // 换挡键孔：空心描边圆（◀◀ 红 / ▶▶ 绿），填充纸带底色以呈现空心
         ctx2d.beginPath(); ctx2d.arc(hx, hy, rHole, 0, 6.2832);
         ctx2d.fillStyle = '#f5f1e4'; ctx2d.fill();
-        ctx2d.strokeStyle = shiftHoleColor(h.lane);
+        ctx2d.strokeStyle = h.lane === 0 ? '#c9563a' : '#4d9a6c';
         ctx2d.lineWidth = 1.4; ctx2d.stroke();
       } else {
         // 音符孔按排分色：主旋律（row0）红橙、和弦（row1）绿——与两排扫描线同色系
@@ -426,12 +421,11 @@
       for (var k2 = 0; k2 < LANES; k2++) {
         var cx = left + PP.laneXMM(r, k2) * ppm - sx;
         if (cx < -10 || cx > vw + 10) continue;
-        var txt = k2 === 0 ? '◀◀' : k2 === 16 ? '▶▶' :
-          k2 === 17 ? '−1a' : k2 === 18 ? '−1b' : k2 === 19 ? '+1a' : k2 === 20 ? '+1b' :
+        var txt = k2 === 0 ? '◀' : k2 === LANES - 1 ? '▶▶' :
           (PP.isDeadLane(k2, sh) ? '·' : PP.midiName(PP.soundingMidi(k2, sh)));
-        // 到界方向的整档键当前不可再按 → 变暗（底界 A0 锚槽 0 / 顶界 C7 锚槽 TOP_SLOT）；
+        // 到界方向的换挡键当前不可再按 → 变暗（底界 A0=0 档 / 顶界 C7=W_MAX 档）；
         // 死轨（压在虚拟黑键位上）灰点；换挡滑动中白键名灰显；已换挡键名金色
-        var atBoundDown = k2 === 0 && sh <= 0, atBoundUp = k2 === 16 && sh >= PP.TOP_SLOT;
+        var atBoundDown = k2 === 0 && sh <= 0, atBoundUp = k2 === LANES - 1 && sh >= PP.W_MAX;
         if (atBoundDown || atBoundUp) ctx2d.fillStyle = '#555f6b';
         else if (PP.isShiftLane(k2)) ctx2d.fillStyle = r === 0 ? '#c98a5f' : '#7fa6d8';
         else if (PP.isDeadLane(k2, sh)) ctx2d.fillStyle = '#4a525c';
@@ -444,8 +438,8 @@
     ctx2d.font = '9px sans-serif';
     ctx2d.textAlign = 'left';
     if (left - sx > state.rulerW + 92) {
-      ctx2d.fillText(rowInfo[1].moving ? '和弦' + (rowInfo[1].dir > 0 ? ' ▶▶' : ' ◀◀') : '上排·和弦·' + PP.gearNameFromSlot(rowInfo[1].s), rulerLeft - sx + 2, gh - 24);
-      ctx2d.fillText(rowInfo[0].moving ? '主旋律' + (rowInfo[0].dir > 0 ? ' ▶▶' : ' ◀◀') : '下排·主旋律·' + PP.gearNameFromSlot(rowInfo[0].s), rulerLeft - sx + 2, gh - 7);
+      ctx2d.fillText(rowInfo[1].moving ? '和弦' + (rowInfo[1].dir > 0 ? ' ▶▶' : ' ◀◀') : '上排·和弦·' + PP.gearName(rowInfo[1].s), rulerLeft - sx + 2, gh - 24);
+      ctx2d.fillText(rowInfo[0].moving ? '主旋律' + (rowInfo[0].dir > 0 ? ' ▶▶' : ' ◀◀') : '下排·主旋律·' + PP.gearName(rowInfo[0].s), rulerLeft - sx + 2, gh - 7);
     }
     ctx2d.textAlign = 'center';
 
@@ -471,8 +465,7 @@
       ? Math.round(state.tempoMap.minBpm) + '~' + Math.round(state.tempoMap.maxBpm)
       : String(state.bpm);
     var sh = state.report && state.report.shifts ? state.report.shifts : [0, 0];
-    var hs = state.report && state.report.halfShifts ? state.report.halfShifts : [0, 0];
-    $('stShift').textContent = '整 ' + sh[0] + '/' + sh[1] + ' 半 ' + hs[0] + '/' + hs[1];
+    $('stShift').textContent = sh[0] + ' / ' + sh[1];
   }
   function setMsg(text) { $('stMsg').textContent = text || ''; }
 
@@ -936,11 +929,11 @@
     s.push('<line x1="0" y1="' + PHYS.leadInMM + '" x2="' + geo.wMM + '" y2="' + PHYS.leadInMM + '" stroke="#66c" stroke-width="0.25" stroke-dasharray="1,1"/>');
     var melStart = PHYS.leadInMM + PHYS.stationGapMM;
     s.push('<line x1="0" y1="' + melStart + '" x2="' + geo.wMM + '" y2="' + melStart + '" stroke="#c66" stroke-width="0.25" stroke-dasharray="1,1"/>');
-    // 孔（按排分色：主旋律红橙 / 和弦绿；换挡键孔按方向分色描边：降向红 / 升向绿）
+    // 孔（按排分色：主旋律红橙 / 和弦绿；换挡键孔按方向分色描边：◀◀ 红 / ▶▶ 绿）
     for (var j = 0; j < geo.holes.length; j++) {
       var hh = geo.holes[j];
       if (PP.isShiftLane(hh.lane)) {
-        s.push('<circle cx="' + hh.x.toFixed(2) + '" cy="' + hh.y.toFixed(2) + '" r="' + PHYS.holeRadiusMM + '" fill="none" stroke="' + shiftHoleColor(hh.lane) + '" stroke-width="0.2"/>');
+        s.push('<circle cx="' + hh.x.toFixed(2) + '" cy="' + hh.y.toFixed(2) + '" r="' + PHYS.holeRadiusMM + '" fill="none" stroke="' + (hh.lane === 0 ? '#c9563a' : '#4d9a6c') + '" stroke-width="0.2"/>');
       } else {
         s.push('<circle cx="' + hh.x.toFixed(2) + '" cy="' + hh.y.toFixed(2) + '" r="' + PHYS.holeRadiusMM + '" fill="' + (hh.row === 0 ? '#a8431f' : '#1e7a4f') + '"/>');
       }
@@ -977,7 +970,7 @@
       var hh = geo.holes[j];
       c.beginPath();
       c.arc(hh.x * scale, hh.y * scale, PHYS.holeRadiusMM * scale, 0, 6.2832);
-      if (PP.isShiftLane(hh.lane)) { c.strokeStyle = shiftHoleColor(hh.lane); c.lineWidth = Math.max(1, scale * 0.2); c.stroke(); }
+      if (PP.isShiftLane(hh.lane)) { c.strokeStyle = hh.lane === 0 ? '#c9563a' : '#4d9a6c'; c.lineWidth = Math.max(1, scale * 0.2); c.stroke(); }
       else { c.fillStyle = hh.row === 0 ? '#a8431f' : '#1e7a4f'; c.fill(); }
     }
     cv.toBlob(function (blob) {
@@ -994,8 +987,8 @@
     state.bpm = res.bpm; $('bpm').value = res.bpm;
     state.tempoMap = null;
     state.mmPerBeat = PHYS.mmPerBeat;
-    state.report = { shifts: res.shifts, halfShifts: res.halfShifts, clamped: 0, pushedNotes: 0, holeCount: res.holes.length };
-    setMsg('示例曲《小星星》已载入（混合换挡：整档 6/4、半音键 0/2），可播放试听');
+    state.report = { shifts: res.shifts, clamped: 0, pushedNotes: 0, holeCount: res.holes.length };
+    setMsg('示例曲《小星星》已载入（两排曲首各升挡 4 次到 ' + PP.gearName(4) + ' 档，下排 B5 处再升 1 次、回 G5 时降 1 次），可播放试听');
     updateSpacer(); draw(); updateStatus();
   }
 

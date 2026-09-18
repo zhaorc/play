@@ -165,7 +165,7 @@
   <span>带长 <b id="stLen">0 mm</b></span>
   <span>时长 <b id="stDur">0:00</b> @ <b id="stBpm">100</b> BPM</span>
   <span>进度 <b id="stPos">0:00</b></span>
-  <span>换挡 整/半(主/和) <b id="stShift">0/0 · 0/0</b></span>
+  <span>换挡键(主/和) <b id="stShift">0 / 0</b></span>
   <span id="stMsg"></span>
 </div>
 
@@ -173,13 +173,12 @@
   <div class="panel">
     <h3>导入 MIDI</h3>
     <div class="hint">为每个轨道选择用途：<b style="color:#8fd0a5">主旋律</b> → 下排键盘，<b style="color:#8fb8e8">和弦</b> → 上排键盘。
-      每档 8 个白键（简化键盘槽位 15 格、13 个真实键，虚拟黑键位占位不发音），音域 A0..C8 由锚槽连续覆盖；
-      每个键位与换挡按钮各由一条滚轮轨控制（每排 21 轨）。音高按原音精确落轨（不做移调），
-      键盘越出当前窗口时自动打换挡孔：<b>整档键</b>（◀◀/▶▶，±1 八度/按，400ms）+ <b>半音键</b>（±1a/±1b 双轨交替，±1 半音/按，10ms）混合调度。</div>
+      每档 8 个白键（简化键盘槽位 15 格、13 个真实键，虚拟黑键位占位不发音），共 8 档（A0→A1→A2→A3→A4→A5→A6→C7）；
+      每个键位与双箭头按钮各由一条滚轮轨控制（每排 17 轨），音高按原音精确落轨（不做移调），超出当前档窗口时自动打换挡键孔移动键盘。</div>
     <div id="trackList"></div>
     <label class="hint"><input type="checkbox" id="chkDrums" checked> 排除打击乐通道（通道 10）</label>
     <label class="hint"><input type="checkbox" id="chkSplit" checked> 单轨按音高拆分：主旋律轨中低于 C4 的音归入和弦排（钢琴 MIDI 常见单轨双手合并时勾选）</label>
-    <label class="hint"><input type="checkbox" id="chkHome" checked> 曲首强制归位：连按 7 次 ◀◀ 钉底到初始位 A0（键盘初始位置不确定；必要时整曲顺延给归位与升挡留时间）</label>
+    <label class="hint"><input type="checkbox" id="chkHome" checked> 曲首强制归位：连按 7 次 ◀◀ 钉底到初始档 A0（键盘初始位置不确定；必要时整曲顺延给归位与升挡留时间）</label>
     <div class="dlg-actions">
       <span class="hint" id="dlgInfo"></span>
       <span class="right">
@@ -262,9 +261,9 @@
 </div>
 
 <script src="js/midi-parser.js?v=3"></script>
-<script src="js/pp-tape.js?v=18"></script>
+<script src="js/pp-tape.js?v=19"></script>
 <script src="js/synth.js"></script>
 <script src="js/punch-sender.js?v=3"></script>
-<script src="js/app.js?v=30"></script>
+<script src="js/app.js?v=29"></script>
 </body>
 </html>
