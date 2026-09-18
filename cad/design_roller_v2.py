@@ -6,7 +6,40 @@
 #   突出高度 h−R = 8.284mm；底边伸入盘内 1mm 保证实体合并
 import math
 import os
+import time
+import threading
+import pythoncom
 import win32com.client as wc
+
+
+# Add...Dimension2 在 SW2026 放置尺寸后等待第二次点击确认：主线程阻塞在 COM 调用期间，
+# 由独立线程延时注入 ESC 结束工具状态（尺寸已按给定坐标放置，ESC 不撤销）
+def esc_after(delay=0.9):
+    def pulse():
+        pythoncom.CoInitialize()
+        try:
+            time.sleep(delay)
+            sh = wc.Dispatch("WScript.Shell")
+            sh.AppActivate("SOLIDWORKS")
+            time.sleep(0.1)
+            sh.SendKeys("{ESC}")
+            time.sleep(0.1)
+            sh.SendKeys("{ESC}")
+        finally:
+            pythoncom.CoUninitialize()
+    t = threading.Thread(target=pulse, daemon=True)
+    t.start()
+    return t
+
+
+def add_dim(add_callable):
+    """调用 Add...Dimension2：ESC 脉冲线程与阻塞调用并行，返回尺寸对象"""
+    t = esc_after()
+    dim = add_callable()
+    t.join(timeout=5)
+    time.sleep(0.3)
+    return dim
+
 
 TPL = r"C:\ProgramData\SolidWorks\SOLIDWORKS 2026\templates\gb_part.prtdot"
 OUT_DIR = r"C:\d_pan\wokspace\play\cad"
@@ -97,9 +130,19 @@ assert front is not None, "NO_PLANE"
 front.Select2(False, 0)
 sm.InsertSketch(True)
 sm.AddToDB = True
-sm.CreateCircleByRadius(0.0, 0.0, 0.0, R_DISC)
-sm.CreateCircleByRadius(0.0, 0.0, 0.0, R_HOLE)
+arc_outer = sm.CreateCircleByRadius(0.0, 0.0, 0.0, R_DISC)
+arc_hole = sm.CreateCircleByRadius(0.0, 0.0, 0.0, R_HOLE)
 sm.AddToDB = False
+# 草图智能尺寸（供工程图 InsertModelAnnotations3 导入）：Ø40 盘径、Ø15 孔
+seg_outer = mod.ISketchSegment(arc_outer._oleobj_)
+seg_hole = mod.ISketchSegment(arc_hole._oleobj_)
+assert seg_outer.Select2(False, 0), "SEL_OUTER_FAIL"
+d_outer = add_dim(lambda: doc.AddDiameterDimension2(0.030, 0.028, 0.0))
+assert d_outer is not None, "DIM_OUTER_FAIL"
+assert seg_hole.Select2(False, 0), "SEL_HOLE_FAIL"
+d_hole = add_dim(lambda: doc.AddDiameterDimension2(0.013, 0.010, 0.0))
+assert d_hole is not None, "DIM_HOLE_FAIL"
+print("SKETCH1_DIMS: D40 + D15")
 sm.InsertSketch(True)
 assert select_last_feature(), "SKETCH1_SELECT_FAIL"
 bf1 = extrude(TH)
@@ -110,11 +153,44 @@ print("FEATURE1:", bf1.Name)
 front.Select2(False, 0)
 sm.InsertSketch(True)
 sm.AddToDB = True
+rects = []
 for deg in (0, 90, 180, 270):
     A = rot((TOOTH_IN, -HALF_W), deg)
     B = rot((H_TIP, HALF_W), deg)
-    sm.CreateCornerRectangle(A[0], A[1], 0.0, B[0], B[1], 0.0)
+    rects.append(sm.CreateCornerRectangle(A[0], A[1], 0.0, B[0], B[1], 0.0))
 sm.AddToDB = False
+# 草图 2 智能尺寸：CreateCornerRectangle 返回线段顺序不可靠，
+# 按几何识别齿顶边——4 条边中"中点到原点距离最大"的即齿顶竖边（中点半径=H_TIP）
+def seg_mid_radius(seg):
+    s = mod.ISketchSegment(seg._oleobj_)
+    ln = mod.ISketchLine(seg._oleobj_)
+    sp = mod.ISketchPoint(ln.GetStartPoint2()._oleobj_)
+    ep = mod.ISketchPoint(ln.GetEndPoint2()._oleobj_)
+    mx = (sp.X + ep.X) * 0.5
+    my = (sp.Y + ep.Y) * 0.5
+    return math.hypot(mx, my), s
+
+
+def tip_edge(rect):
+    cands = [seg_mid_radius(seg) for seg in list(rect)]
+    cands.sort(key=lambda t: -t[0])
+    return cands[0][1]
+
+
+#   齿顶圆 Ø56.57：0°齿与 180°齿两条对置齿顶竖边的水平间距 = 2h
+#   齿宽 4：单条齿顶竖边 + 垂直尺寸（= 竖边长度 4mm）
+e_tip = tip_edge(rects[0])       # x=+h 竖边
+e_tip_op = tip_edge(rects[2])    # x=−h 竖边
+# 齿顶圆：两条对置齿顶竖边 → 水平间距 = 2h = 56.57
+assert e_tip.Select2(False, 0), "SEL_TIP_FAIL"
+assert e_tip_op.Select2(True, 0), "SEL_TIP_OP_FAIL"
+d_tip = add_dim(lambda: doc.AddHorizontalDimension2(0.004, -0.006, 0.0))
+assert d_tip is not None, "DIM_TIPCIRCLE_FAIL"
+# 齿宽：齿顶竖边长度 = 4mm（垂直尺寸）
+assert e_tip.Select2(False, 0), "SEL_TIP2_FAIL"
+d_w = add_dim(lambda: doc.AddVerticalDimension2(0.031, 0.004, 0.0))
+assert d_w is not None, "DIM_WIDTH_FAIL"
+print("SKETCH2_DIMS: tip circle Ø%.4f + width 4" % (H_TIP * 2000.0))
 sm.InsertSketch(True)
 assert select_last_feature(), "SKETCH2_SELECT_FAIL"
 bf2 = extrude(TH)
